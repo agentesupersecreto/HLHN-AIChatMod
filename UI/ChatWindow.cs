@@ -29,6 +29,13 @@ namespace DialogInterceptorMod.UI
         private const float RESIZE_HANDLE_SIZE = 18f;
         private const float MIN_WIDTH = 340f;
         private const float MIN_HEIGHT = 400f;
+
+        // Size used the first time the window is placed. After that the size is whatever the user
+        // drags the resize grip to: it must never be forced back to these values.
+        private const float DEFAULT_WIDTH  = 460f;
+        private const float DEFAULT_HEIGHT = 640f;
+        private const float SCREEN_MARGIN_X = 20f;
+        private const float SCREEN_MARGIN_Y = 40f;
         private string _statusText = "";
         private bool _statusIsError = false;
         private float _statusTime;
@@ -63,7 +70,7 @@ namespace DialogInterceptorMod.UI
         public ChatWindow(DialogBehaviour behaviour)
         {
             _behaviour = behaviour;
-            _windowRect = new Rect(0, 0, 450, 620);
+            _windowRect = new Rect(0, 0, DEFAULT_WIDTH, DEFAULT_HEIGHT);
         }
 
         public void Initialize()
@@ -90,9 +97,9 @@ namespace DialogInterceptorMod.UI
 
         public void ResetToDefaultPosition()
         {
-            float width  = Mathf.Min(460f, Screen.width  > 500 ? 460f : Screen.width  - 20f);
-            float height = Mathf.Min(640f, Screen.height > 700 ? 640f : Screen.height - 40f);
-            float x = Mathf.Max(10f, Screen.width - width - 20f);
+            float width  = Mathf.Min(DEFAULT_WIDTH,  Screen.width  > 500 ? DEFAULT_WIDTH  : Screen.width  - SCREEN_MARGIN_X);
+            float height = Mathf.Min(DEFAULT_HEIGHT, Screen.height > 700 ? DEFAULT_HEIGHT : Screen.height - SCREEN_MARGIN_Y);
+            float x = Mathf.Max(10f, Screen.width - width - SCREEN_MARGIN_X);
             float y = 20f;
             _windowRect = new Rect(x, y, width, height);
             _lastScreenWidth  = Screen.width;
@@ -114,10 +121,11 @@ namespace DialogInterceptorMod.UI
                 return;
             }
 
-            float width  = Mathf.Min(460f, Screen.width  - 20f);
-            float height = Mathf.Min(640f, Screen.height - 40f);
-            _windowRect.width  = width;
-            _windowRect.height = height;
+            // Keep the size the user dragged the resize grip to: only clamp it to the minimums and
+            // to the screen. Force-assigning a fixed size here ran twice per frame and silently
+            // undid every resize, which made the grip look dead.
+            _windowRect.width  = Mathf.Clamp(_windowRect.width,  MIN_WIDTH,  MaxWindowWidth());
+            _windowRect.height = Mathf.Clamp(_windowRect.height, MIN_HEIGHT, MaxWindowHeight());
 
             float maxX = Mathf.Max(0f, Screen.width  - _windowRect.width);
             float maxY = Mathf.Max(0f, Screen.height - _windowRect.height);
@@ -224,6 +232,18 @@ namespace DialogInterceptorMod.UI
             DrawResizeHandle();
         }
 
+        /// <summary>Largest width the window may have on the current screen.</summary>
+        private static float MaxWindowWidth()
+        {
+            return Mathf.Max(MIN_WIDTH, Screen.width - SCREEN_MARGIN_X);
+        }
+
+        /// <summary>Largest height the window may have on the current screen.</summary>
+        private static float MaxWindowHeight()
+        {
+            return Mathf.Max(MIN_HEIGHT, Screen.height - SCREEN_MARGIN_Y);
+        }
+
         private void HandleResize()
         {
             Event e = Event.current;
@@ -246,11 +266,9 @@ namespace DialogInterceptorMod.UI
                 if (e.type == EventType.MouseDrag || e.type == EventType.MouseMove)
                 {
                     Vector2 delta = e.mousePosition - _resizeStart;
-                    float newW = Mathf.Max(MIN_WIDTH,  _resizeSizeStart.x + delta.x);
-                    float newH = Mathf.Max(MIN_HEIGHT, _resizeSizeStart.y + delta.y);
-                    // Clamp to screen
-                    newW = Mathf.Min(newW, Screen.width  - _windowRect.x);
-                    newH = Mathf.Min(newH, Screen.height - _windowRect.y);
+                    // Same bounds the per-frame clamp uses, so the drag never fights with it
+                    float newW = Mathf.Clamp(_resizeSizeStart.x + delta.x, MIN_WIDTH,  MaxWindowWidth());
+                    float newH = Mathf.Clamp(_resizeSizeStart.y + delta.y, MIN_HEIGHT, MaxWindowHeight());
                     _windowRect.width  = newW;
                     _windowRect.height = newH;
                     if (e.type == EventType.MouseDrag) e.Use();

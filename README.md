@@ -114,16 +114,19 @@ The AI can embed special command tags in its responses to trigger game actions. 
 
 ### Available Commands
 
-| Command | Example | Description |
-|---|---|---|
-| `follow` | `[CMD:follow]` | NPC starts following the player |
-| `follow:stop` | `[CMD:follow:stop]` | NPC stops following |
-| `remove_cloth:<slot>` | `[CMD:remove_cloth:dress]` | Remove a clothing item |
-| `put_cloth:<slot>` | `[CMD:put_cloth:bra]` | Put on a clothing item |
-| `kiss` | `[CMD:kiss]` | NPC kisses the player |
-| `make_face:<type>` | `[CMD:make_face:happy]` | Change NPC facial expression |
-| `modify_trust:<value>` | `[CMD:modify_trust:5]` | Increase/decrease trust |
-| `modify_emotion:<stat>:<val>` | `[CMD:modify_emotion:submission:10]` | Modify an emotion stat |
+| Command | Example | Description | Trust requirement |
+|---|---|---|---|
+| `follow` | `[CMD:follow]` | NPC starts following the player | `Trust >= ValueToFollow` |
+| `follow:stop` | `[CMD:follow:stop]` | NPC stops following | — |
+| `remove_cloth:<slot>` | `[CMD:remove_cloth:dress]` | Remove a clothing item | `Trust >= ValueToUndress` |
+| `put_cloth:<slot>` | `[CMD:put_cloth:bra]` | Put on a clothing item | — |
+| `kiss` | `[CMD:kiss]` | NPC kisses the player | `Trust >= ValueToKiss` |
+| `make_face:<type>` | `[CMD:make_face:happy]` | Change NPC facial expression | — |
+| `modify_trust:<value>` | `[CMD:modify_trust:5]` | Increase/decrease trust | — |
+| `modify_emotion:<stat>:<val>` | `[CMD:modify_emotion:submission:10]` | Modify an emotion stat | — |
+| `say:<text>` | `[CMD:say:Come here]` | Force the NPC to speak the text in-game | — |
+
+The thresholds are **enforced in code** (`CommandExecutor.CheckFollowThreshold()` / `CheckUndressThreshold()`, mirroring the game's own `NpcInteractionManager` checks), not only requested in the prompt: below the threshold the command returns a refusal feedback line and does nothing, and the reply still reaches the chat window.
 
 ### Clothing Slots
 

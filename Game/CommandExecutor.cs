@@ -106,12 +106,15 @@ namespace DialogInterceptorMod.Game
 
             if (start)
             {
-                if (!navigator.Follow)
-                {
-                    navigator.MakeNpcFollowMe();
-                    return $"{charName} is now following you.";
-                }
-                return $"{charName} is already following you.";
+                if (navigator.Follow) return $"{charName} is already following you.";
+
+                // The game only starts following through NpcInteractionManager.NpcFollow(),
+                // which checks the threshold; calling MakeNpcFollowMe() directly would skip it.
+                string refusal = CheckFollowThreshold();
+                if (refusal != null) return refusal;
+
+                navigator.MakeNpcFollowMe();
+                return $"{charName} is now following you.";
             }
             else
             {
@@ -122,6 +125,37 @@ namespace DialogInterceptorMod.Game
                 }
                 return $"{charName} is not following you.";
             }
+        }
+
+        /// <summary>
+        /// Trust gate for following. Mirrors the game's own check in
+        /// NpcInteractionManager.NpcFollow(): ValueToFollow &lt;= Trust.
+        /// Returns null when the action is allowed.
+        /// </summary>
+        private static string CheckFollowThreshold()
+        {
+            var emotions = DialogBehaviour.Instance.CurrentEmotions;
+            if (emotions == null) return null; // no stats to compare: keep the best-effort behavior
+            if (emotions.Trust >= emotions.ValueToFollow) return null;
+
+            return $"{DialogBehaviour.Instance.CurrentCharName} refuses to follow you: " +
+                   $"Trust {emotions.Trust:F0} < {emotions.ValueToFollow:F0} required.";
+        }
+
+        /// <summary>
+        /// Trust gate for taking clothes off. Mirrors the game's own check in
+        /// NpcInteractionManager.RemoveClothes(): ValueToUndress &lt;= Trust.
+        /// Needed because the no-animation path (PutRemoveCloth) does not check it.
+        /// Returns null when the action is allowed.
+        /// </summary>
+        private static string CheckUndressThreshold()
+        {
+            var emotions = DialogBehaviour.Instance.CurrentEmotions;
+            if (emotions == null) return null; // no stats to compare: keep the best-effort behavior
+            if (emotions.Trust >= emotions.ValueToUndress) return null;
+
+            return $"{DialogBehaviour.Instance.CurrentCharName} refuses to take her clothes off: " +
+                   $"Trust {emotions.Trust:F0} < {emotions.ValueToUndress:F0} required.";
         }
 
         private static string ExecuteKiss()
@@ -149,6 +183,15 @@ namespace DialogInterceptorMod.Game
             if (mgr == null) return "No NPC interaction manager available.";
 
             slot = ToCanonicalSlot(slot.Trim().ToLowerInvariant());
+
+            // The animated game methods check the undress threshold themselves, but the
+            // no-animation path (used while the NPC is working) does not, so gate both here.
+            if (remove)
+            {
+                string refusal = CheckUndressThreshold();
+                if (refusal != null) return refusal;
+            }
+
             bool canAnimate = mgr.navigator != null && (!mgr.navigator.Working || mgr.navigator.PauseWork) && !mgr.removing;
 
             switch (slot)

@@ -119,6 +119,15 @@ The mod registers a dummy `GameObject` (`AIChat_MenuDummy`) with `NotMove.AddMen
 3. Add intent examples to `ActionIntentDetector` if you want natural-language triggering.
 4. Update the command table in `README.md`.
 
+> **Trust gates are enforced in code, not only in the prompt.** The game gates its own actions in
+> `NpcInteractionManager` (`NpcFollow()` → `ValueToFollow`, `KissHer()` → `ValueToKiss`,
+> `RemoveClothes()` → `ValueToUndress`) but **not every path goes through them**: `MakeNpcFollowMe()`
+> on `NpcNavigatorAndRutines` is a raw toggle, and `PutRemoveNoAnimation()` / `PutRemoveCloth()`
+> (the path used while the NPC is working) skips the undress check entirely. `CommandExecutor`
+> therefore mirrors those thresholds with `CheckFollowThreshold()` / `CheckUndressThreshold()` and
+> returns a refusal string instead of acting. Do the same for any new action that has a threshold;
+> returning `null` from a gate means "no stats available, keep the best-effort behaviour".
+
 ---
 
 ## Adding a New AI Provider
