@@ -17,10 +17,10 @@ namespace DialogInterceptorMod.API
             _behaviour = behaviour;
         }
 
-        public IEnumerator SendMessage(string mensajeUsuario)
+        public IEnumerator SendMessage(string userMessage)
         {
             string url = $"https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-lite-latest:generateContent?key={_behaviour.ApiKey}";
-            string systemPromptStr = PromptBuilder.GenerateSystemPrompt(mensajeUsuario);
+            string systemPromptStr = PromptBuilder.GenerateSystemPrompt(userMessage);
 
             // Include summary in system prompt if available
             if (!string.IsNullOrEmpty(_behaviour.ChatSummary))
@@ -31,20 +31,22 @@ namespace DialogInterceptorMod.API
             StringBuilder contentsJson = new StringBuilder();
             contentsJson.Append("[");
 
-            bool primero = true;
+            bool isFirst = true;
             foreach (var msg in _behaviour.ChatHistory)
             {
                 if (msg.IsSystem) continue; // Skip system feedback messages
-                if (!primero) contentsJson.Append(",");
-                primero = false;
+                if (!isFirst) contentsJson.Append(",");
+                isFirst = false;
                 string role = msg.IsUser ? "user" : "model";
-                string textoEscapado = EscapeJson(msg.IsUser ? msg.Text : $"{{\"dialogo\": \"{msg.Text}\", \"comando\": null}}");
-                contentsJson.Append($"{{\"role\":\"{role}\",\"parts\":[{{\"text\":\"{textoEscapado}\"}}]}}");
+                // Assistant turns are wrapped in the same JSON shape this provider is
+                // asked for in the format instruction (see PromptBuilder).
+                string escapedText = EscapeJson(msg.IsUser ? msg.Text : $"{{\"dialogue\": \"{msg.Text}\", \"command\": null}}");
+                contentsJson.Append($"{{\"role\":\"{role}\",\"parts\":[{{\"text\":\"{escapedText}\"}}]}}");
             }
             contentsJson.Append("]");
 
-            string systemEscapado = EscapeJson(systemPromptStr);
-            string body = $"{{\"system_instruction\":{{\"parts\":[{{\"text\":\"{systemEscapado}\"}}]}},\"contents\":{contentsJson.ToString()},\"generationConfig\":{{\"maxOutputTokens\":512}}}}";
+            string escapedSystemPrompt = EscapeJson(systemPromptStr);
+            string body = $"{{\"system_instruction\":{{\"parts\":[{{\"text\":\"{escapedSystemPrompt}\"}}]}},\"contents\":{contentsJson.ToString()},\"generationConfig\":{{\"maxOutputTokens\":512}}}}";
 
             byte[] bodyBytes = Encoding.UTF8.GetBytes(body);
             UnityWebRequest request = new UnityWebRequest(url, "POST");
@@ -58,7 +60,7 @@ namespace DialogInterceptorMod.API
             {
                 string error = request.error;
                 string responseBody = request.downloadHandler?.text ?? "";
-                Plugin.Log.LogError($"Error de Gemini: {error} | Body: {responseBody}");
+                Plugin.Log.LogError($"Gemini error: {error} | Body: {responseBody}");
                 
                 string errorMsg = ExtractErrorMessage(responseBody);
                 if (!string.IsNullOrEmpty(errorMsg))
@@ -70,17 +72,17 @@ namespace DialogInterceptorMod.API
                 yield break;
             }
 
-            string respuesta = request.downloadHandler.text;
-            string textoIA = ExtractResponseText(respuesta);
+            string rawResponse = request.downloadHandler.text;
+            string aiText = ExtractResponseText(rawResponse);
 
-            if (string.IsNullOrEmpty(textoIA))
+            if (string.IsNullOrEmpty(aiText))
             {
                 _behaviour.Window.SetStatus("[ERROR] Could not parse JSON response.", true);
                 _behaviour.Window.AwaitingResponse = false;
                 yield break;
             }
 
-            AIResponseProcessor.ProcessResponse(textoIA, _behaviour, "Gemini");
+            AIResponseProcessor.ProcessResponse(aiText, _behaviour, "Gemini");
             _behaviour.Window.AwaitingResponse = false;
 
             // Gemini uses summarization for memory
@@ -92,16 +94,16 @@ namespace DialogInterceptorMod.API
 
         private IEnumerator GenerateSummaryAndClean()
         {
-            int mensajesAResumirCount = 6;
-            if (_behaviour.ChatHistory.Count <= mensajesAResumirCount) yield break;
+            int messagesToSummarize = 6;
+            if (_behaviour.ChatHistory.Count <= messagesToSummarize) yield break;
 
-            StringBuilder textoAResumir = new StringBuilder();
+            StringBuilder textToSummarize = new StringBuilder();
             int counted = 0;
-            for (int i = 0; i < _behaviour.ChatHistory.Count && counted < mensajesAResumirCount; i++)
+            for (int i = 0; i < _behaviour.ChatHistory.Count && counted < messagesToSummarize; i++)
             {
                 var msg = _behaviour.ChatHistory[i];
                 if (msg.IsSystem) continue;
-                textoAResumir.AppendLine((msg.IsUser ? "Player: " : "Model: ") + msg.Text);
+                textToSummarize.AppendLine((msg.IsUser ? "Player: " : "Model: ") + msg.Text);
                 counted++;
             }
 
@@ -109,7 +111,7 @@ namespace DialogInterceptorMod.API
             string currentSummary = _behaviour.ChatSummary;
             
             string sysPrompt = "Summarize the key events and context of this conversation briefly in English. Combine it with the previous summary if provided.";
-            string prompt = (string.IsNullOrEmpty(currentSummary) ? "" : $"Previous Summary: {currentSummary}\n\n") + $"New Chat Messages to summarize:\n{textoAResumir.ToString()}";
+            string prompt = (string.IsNullOrEmpty(currentSummary) ? "" : $"Previous Summary: {currentSummary}\n\n") + $"New Chat Messages to summarize:\n{textToSummarize.ToString()}";
 
             string bodyStr = $"{{\"system_instruction\":{{\"parts\":[{{\"text\":\"{EscapeJson(sysPrompt)}\"}}]}},\"contents\":[{{\"role\":\"user\",\"parts\":[{{\"text\":\"{EscapeJson(prompt)}\"}}]}}],\"generationConfig\":{{\"maxOutputTokens\":512}}}}";
 
@@ -123,19 +125,19 @@ namespace DialogInterceptorMod.API
 
             if (request.result == UnityWebRequest.Result.ConnectionError || request.result == UnityWebRequest.Result.ProtocolError)
             {
-                Plugin.Log.LogWarning($"No se pudo generar el resumen: {request.error}");
+                Plugin.Log.LogWarning($"Could not generate the conversation summary: {request.error}");
                 yield break;
             }
 
-            string respuesta = request.downloadHandler.text;
-            string textoIA = ExtractResponseText(respuesta);
+            string rawResponse = request.downloadHandler.text;
+            string aiText = ExtractResponseText(rawResponse);
 
-            if (!string.IsNullOrEmpty(textoIA))
+            if (!string.IsNullOrEmpty(aiText))
             {
-                _behaviour.ChatSummary = textoIA;
+                _behaviour.ChatSummary = aiText;
                 // Remove the oldest non-system messages
                 int removed = 0;
-                while (removed < mensajesAResumirCount && _behaviour.ChatHistory.Count > 0)
+                while (removed < messagesToSummarize && _behaviour.ChatHistory.Count > 0)
                 {
                     if (!_behaviour.ChatHistory[0].IsSystem)
                     {
@@ -147,7 +149,7 @@ namespace DialogInterceptorMod.API
                         _behaviour.ChatHistory.RemoveAt(0);
                     }
                 }
-                Plugin.Log.LogInfo($"Resumen actualizado. Mensajes restantes: {_behaviour.ChatHistory.Count}");
+                Plugin.Log.LogInfo($"Summary updated. Remaining messages: {_behaviour.ChatHistory.Count}");
             }
         }
 
@@ -201,10 +203,10 @@ namespace DialogInterceptorMod.API
             return clean.Trim();
         }
 
-        public static string EscapeJson(string texto)
+        public static string EscapeJson(string text)
         {
-            if (string.IsNullOrEmpty(texto)) return "";
-            return texto
+            if (string.IsNullOrEmpty(text)) return "";
+            return text
                 .Replace("\\", "\\\\")
                 .Replace("\"", "\\\"")
                 .Replace("\n", "\\n")

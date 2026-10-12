@@ -68,6 +68,11 @@ namespace DialogInterceptorMod.UI
 
         public void Initialize()
         {
+            // BepInEx/config/AIChat is created on demand, and the .ini is written on first run
+            Plugin.EnsureConfigDir();
+            if (!File.Exists(GetIniPath()))
+                SaveConfig();
+
             _editOllamaUrl   = _behaviour.OllamaUrl;
             _editOllamaModel = _behaviour.OllamaModel;
             _editGemmaUrl    = _behaviour.GemmaUrl;
@@ -287,7 +292,7 @@ namespace DialogInterceptorMod.UI
             GUILayout.Label($"HLHN AI Chat v0.1 -- {charLabel}", ChatStyles.TitleStyle);
             GUILayout.FlexibleSpace();
 
-            if (GUILayout.Button("[R]", ChatStyles.ButtonStyle, GUILayout.Width(32)))
+            if (GUILayout.Button("[Reload]", ChatStyles.ButtonStyle, GUILayout.Width(32)))
                 ResetToDefaultPosition();
             if (GUILayout.Button("[X]", ChatStyles.ButtonStyle, GUILayout.Width(32)))
                 SetVisible(false);
@@ -298,8 +303,8 @@ namespace DialogInterceptorMod.UI
             // ── Tab bar ────────────────────────────────────────
             GUILayout.BeginHorizontal();
             DrawTabButton("[CHAT]",  0);
-            DrawTabButton("[SET]",   1);
-            DrawTabButton("[DBG]",   2);
+            DrawTabButton("[CONFIG]",   1);
+            DrawTabButton("[DEBUG]",   2);
             GUILayout.EndHorizontal();
 
             GUILayout.Space(4);
@@ -729,21 +734,13 @@ namespace DialogInterceptorMod.UI
         public void ShowEmotionFeedback(string text, bool isPositive) => SetStatus(text, !isPositive);
 
         // ═══════════════════════════════════════════════════════════
-        //  Config: BepInEx/config/HLHN_AIChatMod.ini
+        //  Config: BepInEx/config/AIChat/HLHN_AIChatMod.ini
         // ═══════════════════════════════════════════════════════════
 
         private string GetIniPath()
         {
-            // Plugin.ConfigPath = directory of the .dll, i.e. BepInEx/plugins/
-            // BepInEx/config is one level up from plugins/
-            string configDir = string.IsNullOrEmpty(Plugin.ConfigPath)
-                ? Application.dataPath
-                : Path.GetFullPath(Path.Combine(Plugin.ConfigPath, "..", "config"));
-
-            if (!Directory.Exists(configDir))
-                Directory.CreateDirectory(configDir);
-
-            return Path.Combine(configDir, "HLHN_AIChatMod.ini");
+            Plugin.EnsureConfigDir();
+            return Plugin.GetConfigFilePath(Plugin.SettingsFileName);
         }
 
         public void SaveConfig()

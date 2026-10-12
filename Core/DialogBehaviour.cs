@@ -28,6 +28,7 @@ namespace DialogInterceptorMod.Core
         public List<ChatMessage> ChatHistory { get; private set; } = new List<ChatMessage>();
         public string ChatSummary = "";
         public string CustomPrompt = "";
+        private DateTime _customPromptWriteTime = DateTime.MinValue;
 
         // --- Config fields ---
         public string ApiKey = "";
@@ -90,7 +91,7 @@ namespace DialogInterceptorMod.Core
             go.hideFlags |= (HideFlags)61; // HideAndDontSave
             UnityEngine.Object.DontDestroyOnLoad(go);
             Instance = go.AddComponent<DialogBehaviour>();
-            Plugin.LogInfo("GameObject persistente 'HLHNAIChat' creado.");
+            Plugin.LogInfo("Persistent GameObject 'HLHNAIChat' created.");
         }
 
         private GameObject _chatMenuDummy;
@@ -107,20 +108,64 @@ namespace DialogInterceptorMod.Core
 
             Window = new ChatWindow(this);
 
-            string customPromptPath = System.IO.Path.Combine(
-                System.IO.Path.GetDirectoryName(Plugin.ConfigPath ?? Application.dataPath),
-                "AIchat/custom_prompt.txt");
-            if (System.IO.File.Exists(customPromptPath))
-            {
-                CustomPrompt = System.IO.File.ReadAllText(customPromptPath);
-                Plugin.LogInfo("Custom prompt loaded.");
-            }
+            // Creates BepInEx/config/AIChat/{system_prompt,custom_prompt}.txt on first run
+            PromptBuilder.EnsurePromptFiles();
         }
 
         private void Start()
         {
             Window.Initialize();
             RebuildApiClient();
+        }
+
+        /// <summary>
+        /// Returns the contents of custom_prompt.txt, re-reading it whenever the file changes so
+        /// edits apply without restarting the game. Lines starting with # or // are comments.
+        /// </summary>
+        public string GetCustomPrompt()
+        {
+            string path = Plugin.GetConfigFilePath(Plugin.CustomPromptFileName);
+            try
+            {
+                if (!System.IO.File.Exists(path))
+                {
+                    _customPromptWriteTime = DateTime.MinValue;
+                    CustomPrompt = "";
+                    return CustomPrompt;
+                }
+
+                DateTime writeTime = System.IO.File.GetLastWriteTimeUtc(path);
+                if (writeTime == _customPromptWriteTime) return CustomPrompt;
+
+                _customPromptWriteTime = writeTime;
+                CustomPrompt = StripCommentLines(System.IO.File.ReadAllText(path));
+                Plugin.LogInfo($"{Plugin.CustomPromptFileName} loaded ({CustomPrompt.Length} chars).");
+            }
+            catch (Exception ex)
+            {
+                Plugin.LogWarning($"Could not read {Plugin.CustomPromptFileName}: {ex.Message}");
+            }
+
+            return CustomPrompt;
+        }
+
+        /// <summary>
+        /// Drops comment lines (# or //) and blank lines from a user-editable prompt file.
+        /// </summary>
+        private static string StripCommentLines(string text)
+        {
+            if (string.IsNullOrEmpty(text)) return "";
+
+            var sb = new System.Text.StringBuilder();
+            foreach (string rawLine in text.Split('\n'))
+            {
+                string line = rawLine.Trim();
+                if (line.Length == 0) continue;
+                if (line.StartsWith("#") || line.StartsWith("//")) continue;
+                sb.AppendLine(line);
+            }
+
+            return sb.ToString().Trim();
         }
 
         /// <summary>

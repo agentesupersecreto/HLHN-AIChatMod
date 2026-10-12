@@ -12,20 +12,20 @@ namespace DialogInterceptorMod.API
         /// Extracts the value of a given key from a JSON-like string.
         /// Handles escaped quotes, null values, and malformed responses.
         /// </summary>
-        public static string ExtractJsonValue(string json, string clave)
+        public static string ExtractJsonValue(string json, string key)
         {
             if (string.IsNullOrEmpty(json)) return null;
 
             // Strip markdown code blocks if present
             json = StripMarkdownCodeBlocks(json);
 
-            string target = $"\"{clave}\"";
+            string target = $"\"{key}\"";
             int keyIdx = json.IndexOf(target);
             if (keyIdx < 0)
             {
                 // Try case-insensitive search
                 string jsonLower = json.ToLower();
-                keyIdx = jsonLower.IndexOf($"\"{clave.ToLower()}\"");
+                keyIdx = jsonLower.IndexOf($"\"{key.ToLower()}\"");
                 if (keyIdx < 0) return null;
             }
 
@@ -105,20 +105,20 @@ namespace DialogInterceptorMod.API
 
         /// <summary>
         /// Extracts the value of a key using the LAST occurrence of the key name.
-        /// This avoids matching keys that appear inside string values (e.g. "comando" inside dialogo text).
+        /// This avoids matching keys that appear inside string values (e.g. "command" inside the dialogue text).
         /// </summary>
-        public static string ExtractJsonValueFromEnd(string json, string clave)
+        public static string ExtractJsonValueFromEnd(string json, string key)
         {
             if (string.IsNullOrEmpty(json)) return null;
 
             json = StripMarkdownCodeBlocks(json);
 
-            string target = $"\"{clave}\"";
+            string target = $"\"{key}\"";
             int keyIdx = json.LastIndexOf(target);
             if (keyIdx < 0)
             {
                 string jsonLower = json.ToLower();
-                keyIdx = jsonLower.LastIndexOf($"\"{clave.ToLower()}\"");
+                keyIdx = jsonLower.LastIndexOf($"\"{key.ToLower()}\"");
                 if (keyIdx < 0) return null;
             }
 
@@ -167,10 +167,10 @@ namespace DialogInterceptorMod.API
             }
         }
 
-        public static string EscapeJson(string texto)
+        public static string EscapeJson(string text)
         {
-            if (string.IsNullOrEmpty(texto)) return "";
-            return texto
+            if (string.IsNullOrEmpty(text)) return "";
+            return text
                 .Replace("\\", "\\\\")
                 .Replace("\"", "\\\"")
                 .Replace("\n", "\\n")

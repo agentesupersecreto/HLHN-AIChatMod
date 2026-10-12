@@ -19,7 +19,7 @@ namespace DialogInterceptorMod.API
             _behaviour = behaviour;
         }
 
-        public IEnumerator SendMessage(string mensajeUsuario)
+        public IEnumerator SendMessage(string userMessage)
         {
             string url = _behaviour.OllamaUrl;
             string model = _behaviour.OllamaModel;
@@ -31,10 +31,10 @@ namespace DialogInterceptorMod.API
                 url = url.TrimEnd('/') + "/api/chat";
 
             // Build the messages array for the /api/chat endpoint
-            string systemPrompt = PromptBuilder.GenerateSystemPrompt(mensajeUsuario);
-            string messagesJson = BuildChatMessages(systemPrompt, mensajeUsuario);
+            string systemPrompt = PromptBuilder.GenerateSystemPrompt(userMessage);
+            string messagesJson = BuildChatMessages(systemPrompt, userMessage);
 
-            int approxTokens = (systemPrompt.Length + mensajeUsuario.Length) / 4;
+            int approxTokens = (systemPrompt.Length + userMessage.Length) / 4;
             Plugin.Log.LogInfo($"Ollama /api/chat — system prompt: {systemPrompt.Length} chars (~{systemPrompt.Length/4} tokens), {_behaviour.ChatHistory.Count} history msgs");
 
             string body = $"{{\"model\":\"{JsonHelper.EscapeJson(model)}\",\"messages\":{messagesJson},\"stream\":false,\"options\":{{\"num_ctx\":8192,\"num_predict\":2048}}}}";
@@ -52,7 +52,7 @@ namespace DialogInterceptorMod.API
             {
                 string error = request.error;
                 string responseBody = request.downloadHandler?.text ?? "";
-                Plugin.Log.LogError($"Error de Ollama: {error} | Body: {responseBody}");
+                Plugin.Log.LogError($"Ollama error: {error} | Body: {responseBody}");
 
                 if (error != null && error.Contains("Cannot connect"))
                     _behaviour.Window.SetStatus("[ERROR] Cannot connect to Ollama. Is it running? (ollama serve)", true);
@@ -63,32 +63,32 @@ namespace DialogInterceptorMod.API
                 yield break;
             }
 
-            string respuesta = request.downloadHandler.text;
-            Plugin.Log.LogInfo($"Ollama raw response: {(respuesta.Length > 300 ? respuesta.Substring(0, 300) + "..." : respuesta)}");
+            string rawResponse = request.downloadHandler.text;
+            Plugin.Log.LogInfo($"Ollama raw response: {(rawResponse.Length > 300 ? rawResponse.Substring(0, 300) + "..." : rawResponse)}");
 
             // /api/chat returns {"message": {"role": "assistant", "content": "...", "thinking": "..."}, ...}
-            string textoIA = ExtractChatContent(respuesta);
+            string aiText = ExtractChatContent(rawResponse);
 
             // Thinking models (Gemma 4, etc.) may put all output in "thinking" with empty "content".
             // If content is empty, try to extract from thinking field.
-            if (string.IsNullOrEmpty(textoIA))
+            if (string.IsNullOrEmpty(aiText))
             {
-                string thinking = ExtractJsonField(respuesta, "thinking");
+                string thinking = ExtractJsonField(rawResponse, "thinking");
                 if (!string.IsNullOrEmpty(thinking))
                 {
                     Plugin.Log.LogInfo($"Ollama thinking model detected. Thinking length: {thinking.Length} chars");
                     // Try to find the actual dialogue in the thinking output.
                     // Thinking models often end their reasoning with the actual response.
-                    textoIA = ExtractDialogueFromThinking(thinking);
+                    aiText = ExtractDialogueFromThinking(thinking);
                 }
             }
 
-            if (string.IsNullOrEmpty(textoIA))
+            if (string.IsNullOrEmpty(aiText))
             {
-                string doneReason = JsonHelper.ExtractJsonValue(respuesta, "done_reason");
+                string doneReason = JsonHelper.ExtractJsonValue(rawResponse, "done_reason");
                 if (doneReason == "length")
                 {
-                    string thinking = ExtractJsonField(respuesta, "thinking");
+                    string thinking = ExtractJsonField(rawResponse, "thinking");
                     if (!string.IsNullOrEmpty(thinking))
                         _behaviour.Window.SetStatus("[ERROR] Thinking model ran out of tokens before producing a response. Try increasing context or use a non-thinking model.", true);
                     else
@@ -101,7 +101,7 @@ namespace DialogInterceptorMod.API
                 yield break;
             }
 
-            AIResponseProcessor.ProcessResponse(textoIA, _behaviour, "Ollama");
+            AIResponseProcessor.ProcessResponse(aiText, _behaviour, "Ollama");
             _behaviour.Window.AwaitingResponse = false;
         }
 

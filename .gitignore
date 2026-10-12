@@ -1,2 +1,4 @@
 Assembly-CSharp/
 .codegraph/
+bin/
+update_log.txt

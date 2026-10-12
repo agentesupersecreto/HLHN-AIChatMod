@@ -18,6 +18,7 @@ It integrates an AI chat system into the game, allowing players to have natural 
 3. **`DontDestroyOnLoad`** is applied to the mod's `GameObject`. Styles must survive scene transitions (use `HideFlags.HideAndDontSave` on textures).
 4. **Harmony patches should be minimal** — Only patch what's needed; prefer hooks via `DialogBehaviour` methods.
 5. **AI response flow**: `PromptBuilder.Build()` → `IApiClient.SendMessage()` → `AIResponseProcessor.Process()` → `CommandExecutor.ExecuteCommand()` + `Speach.Say()`.
+6. **English-only code, multilingual data**: identifiers, comments, log/status messages, UI labels and prompt text are English. The only non-English literals allowed are *input data* — intent keywords, cloth-slot synonyms and accent-folding tables (`ActionIntentDetector`, `CommandExecutor.ToCanonicalSlot`). Player input must work in any language: the model receives the raw message and the prompt's `LANG:` line makes it answer in that same language. Do **not** hardcode Spanish (or any other language) into the AI-facing protocol: the JSON keys and `[CMD:]` slots are English (`dialogue`/`style`/`command`, `remove_cloth:dress`).
 
 ---
 
@@ -58,6 +59,23 @@ CommandExecutor.cs
 
 ---
 
+## Config & User Files
+
+Everything the user can edit lives in **`BepInEx/config/AIChat/`**, created on first run:
+
+| File | Purpose | Written by |
+|---|---|---|
+| `HLHN_AIChatMod.ini` | Settings | `ChatWindow.SaveConfig()` (created on first launch) |
+| `system_prompt.txt` | Editable system prompt template with `{Placeholder}` substitution | `PromptBuilder.EnsurePromptFiles()` |
+| `custom_prompt.txt` | Extra `[RULES]` text; `#` and `//` lines are comments | `PromptBuilder.EnsurePromptFiles()` |
+
+- **Never hardcode these paths** — always use `Plugin.ConfigDir` / `Plugin.GetConfigFilePath(Plugin.<X>Name)`, so a path change only touches `Plugin.cs`.
+- `Plugin.MigrateFile()` imports files from older layouts on startup (`BepInEx/config/HLHN_AIChatMod.ini`, `BepInEx/AIchat/custom_prompt.txt`, `LocalLow/<Game>/AIchat/system_prompt.txt`).
+- Both prompt files are picked up again when they change on disk, so users can edit them without restarting the game (`DialogBehaviour.GetCustomPrompt()` caches on last-write time).
+- Per-character **memory/history is data, not config**: it stays under `Application.persistentDataPath/AIchat/` (`ConversationMemory`, `ChatWindow.SaveChatHistory`).
+
+---
+
 ## NPC Tracking Logic
 
 `DialogBehaviour.RefreshCurrentNpc()` is called every `Update()`:
@@ -87,7 +105,7 @@ The mod registers a dummy `GameObject` (`AIChat_MenuDummy`) with `NotMove.AddMen
   System-message prefixes currently in use: `[EVT]` (game events), `[CMD]` (command feedback), `[+]` / `[-]` (trust up/down).
 - **Never append to `ChatHistory` directly from Harmony patches** — route captured in-game events through
   `DialogBehaviour.AddCapturedEvent()` so the `SpamFilter` cooldown/dedup applies. Only the mod's own AI reply
-  (`new ChatMessage(false, dialogo)`) bypasses the filter.
+  (`new ChatMessage(false, dialogue)`) bypasses the filter.
 - **Texture persistence** — All `Texture2D` created in `ChatStyles` must have `hideFlags = HideFlags.HideAndDontSave`.
 - **Style reinitialization** — `ChatStyles.NeedsReinitialize()` is checked on every `Draw()` call to recover from scene changes that destroy texture references.
 - **Window anchoring** — `ChatWindow.EnsureWindowPosition()` clamps the window to the top-right corner and prevents it from going off-screen.

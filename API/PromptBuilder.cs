@@ -37,9 +37,10 @@ namespace DialogInterceptorMod.API
                 Plugin.LogWarning($"Could not capture character context: {ex.Message}");
             }
 
-            // Custom rules from file
-            if (!string.IsNullOrEmpty(DialogBehaviour.Instance.CustomPrompt))
-                customRules = $"\n[RULES] {DialogBehaviour.Instance.CustomPrompt}";
+            // Custom rules from custom_prompt.txt (re-read when the user edits the file)
+            string customPrompt = DialogBehaviour.Instance.GetCustomPrompt();
+            if (!string.IsNullOrEmpty(customPrompt))
+                customRules = $"\n[RULES] {customPrompt}";
 
             // Memory
             memory = DialogBehaviour.Instance.Memory.GenerateMemoryBlock();
@@ -54,14 +55,13 @@ namespace DialogInterceptorMod.API
 
             string formatInstruction = isLocal
                 ? "\nFMT: Plain text dialogue only — respond as your character would speak. Commands in brackets: [CMD: name]. Styles in brackets: [STYLE: name]. Styles: happy,angry,sad,neutral,shy,aroused,annoyed,embarrassed,flirty. Example: Sure, lead the way! [STYLE: happy] [CMD: follow:start]"
-                : "\nFMT: Respond as JSON: {\"dialogo\":\"text\",\"estilo\":\"style\",\"comando\":\"cmd_or_null\"}. Styles: happy,angry,sad,neutral,shy,aroused,annoyed,embarrassed,flirty. Set comando=null when no action needed.";
+                : "\nFMT: Respond as JSON: {\"dialogue\":\"text\",\"style\":\"style\",\"command\":\"cmd_or_null\"}. Styles: happy,angry,sad,neutral,shy,aroused,annoyed,embarrassed,flirty. Set command=null when no action is needed.";
 
             // Commands
             string commands = BuildCommandList();
 
-            // Build the prompt — use template or generate
-            string configDir = System.IO.Path.Combine(Application.persistentDataPath, "AIchat");
-            string systemPromptPath = System.IO.Path.Combine(configDir, "system_prompt.txt");
+            // Build the prompt — use the editable template when it exists, otherwise generate it
+            string systemPromptPath = Plugin.GetConfigFilePath(Plugin.SystemPromptFileName);
 
             if (System.IO.File.Exists(systemPromptPath))
             {
@@ -102,7 +102,7 @@ namespace DialogInterceptorMod.API
             if (!string.IsNullOrEmpty(intentGuidance))
                 sb.AppendLine(intentGuidance);
 
-            sb.AppendLine("\nLANG: Match the user's language exactly. If they write in Spanish, respond in Spanish. If English, respond in English.");
+            sb.AppendLine("\nLANG: Understand the player's message in ANY language (English, Spanish, Portuguese, Russian, French, German, Italian, etc.) and ALWAYS answer in that same language. Never switch languages.");
             sb.AppendLine(jailbreak);
             sb.AppendLine(customRules);
 
@@ -113,35 +113,87 @@ namespace DialogInterceptorMod.API
             sb.AppendLine("\nNATIVE GAME COMMANDS (use these to trigger actions in the game):");
             sb.AppendLine(commands);
 
-            // Save template for future editing
+            // Save the template so the user can edit it from now on
             try
             {
-                if (!System.IO.Directory.Exists(configDir))
-                    System.IO.Directory.CreateDirectory(configDir);
-
-                var templateSb = new StringBuilder();
-                templateSb.AppendLine("You are a real woman living in a house. You are NOT an AI, chatbot, or assistant — you are a living person with your own thoughts, feelings, desires, and personality.");
-                templateSb.AppendLine("You are one of four women (Laura, Susan, Stacy, or Katherine) who lives in this house with a man (the player). You stay fully in character at all times.");
-                templateSb.AppendLine();
-                templateSb.AppendLine("PERSONALITY GUIDELINES:");
-                templateSb.AppendLine("- LOW Trust (0-30): Cautious, reserved, cold. HIGH Trust (60-100): Affectionate, open, romantic. VERY HIGH (100+): Deeply in love.");
-                templateSb.AppendLine("- Submission, Perversion, Desire stats influence boldness and sexuality.");
-                templateSb.AppendLine();
-                templateSb.AppendLine("{CharacterContext}");
-                templateSb.AppendLine("{Memory}");
-                templateSb.AppendLine("\nLANG: Match the user's language exactly.");
-                templateSb.AppendLine("{Jailbreak}");
-                templateSb.AppendLine("{CustomRules}");
-                templateSb.AppendLine("\nACT: Adjust tone based on stats. Keep responses short (1-3 sentences).");
-                templateSb.AppendLine("{FormatInstruction}");
-                templateSb.AppendLine("\nCMDS:");
-                templateSb.AppendLine("{AllowedCommands}");
-
-                System.IO.File.WriteAllText(systemPromptPath, templateSb.ToString());
+                Plugin.EnsureConfigDir();
+                System.IO.File.WriteAllText(systemPromptPath, BuildDefaultTemplate());
             }
-            catch { }
+            catch (Exception ex)
+            {
+                Plugin.LogWarning($"Could not write {Plugin.SystemPromptFileName}: {ex.Message}");
+            }
 
             return sb.ToString();
+        }
+
+        /// <summary>
+        /// Creates system_prompt.txt and custom_prompt.txt with their default contents when they
+        /// are missing, so the user always has both files available to edit. Called at startup.
+        /// </summary>
+        public static void EnsurePromptFiles()
+        {
+            try
+            {
+                Plugin.EnsureConfigDir();
+
+                string systemPromptPath = Plugin.GetConfigFilePath(Plugin.SystemPromptFileName);
+                if (!System.IO.File.Exists(systemPromptPath))
+                {
+                    System.IO.File.WriteAllText(systemPromptPath, BuildDefaultTemplate());
+                    Plugin.LogInfo($"Created default {Plugin.SystemPromptFileName}: {systemPromptPath}");
+                }
+
+                string customPromptPath = Plugin.GetConfigFilePath(Plugin.CustomPromptFileName);
+                if (!System.IO.File.Exists(customPromptPath))
+                {
+                    System.IO.File.WriteAllText(customPromptPath, CustomPromptFileHeader);
+                    Plugin.LogInfo($"Created default {Plugin.CustomPromptFileName}: {customPromptPath}");
+                }
+            }
+            catch (Exception ex)
+            {
+                Plugin.LogWarning($"Could not create the prompt files: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Contents written into a fresh custom_prompt.txt. Every line is a comment, so an
+        /// untouched file adds nothing to the prompt.
+        /// </summary>
+        private const string CustomPromptFileHeader =
+            "# custom_prompt.txt - extra rules injected into every AI prompt (the [RULES] section).\n" +
+            "# Lines starting with # or // are ignored by the mod: write your rules below them.\n" +
+            "# The file is re-read automatically when you save it, no need to restart the game.\n" +
+            "#\n" +
+            "# Example:\n" +
+            "# - Never mention being an AI, a model or a program.\n" +
+            "# - Keep every reply under two sentences.\n";
+
+        /// <summary>
+        /// Default contents of system_prompt.txt. The {Placeholders} are replaced on every request
+        /// (see GenerateSystemPrompt), so the file stays editable without touching the code.
+        /// </summary>
+        private static string BuildDefaultTemplate()
+        {
+            var templateSb = new StringBuilder();
+            templateSb.AppendLine("You are a real woman living in a house. You are NOT an AI, chatbot, or assistant — you are a living person with your own thoughts, feelings, desires, and personality.");
+            templateSb.AppendLine("You are one of four women (Laura, Susan, Stacy, or Katherine) who lives in this house with a man (the player). You stay fully in character at all times.");
+            templateSb.AppendLine();
+            templateSb.AppendLine("PERSONALITY GUIDELINES:");
+            templateSb.AppendLine("- LOW Trust (0-30): Cautious, reserved, cold. HIGH Trust (60-100): Affectionate, open, romantic. VERY HIGH (100+): Deeply in love.");
+            templateSb.AppendLine("- Submission, Perversion, Desire stats influence boldness and sexuality.");
+            templateSb.AppendLine();
+            templateSb.AppendLine("{CharacterContext}");
+            templateSb.AppendLine("{Memory}");
+            templateSb.AppendLine("\nLANG: Understand the player in any language and always answer in that same language.");
+            templateSb.AppendLine("{Jailbreak}");
+            templateSb.AppendLine("{CustomRules}");
+            templateSb.AppendLine("\nACT: Adjust tone based on stats. Keep responses short (1-3 sentences).");
+            templateSb.AppendLine("{FormatInstruction}");
+            templateSb.AppendLine("\nCMDS:");
+            templateSb.AppendLine("{AllowedCommands}");
+            return templateSb.ToString();
         }
 
         private static string BuildCommandList()

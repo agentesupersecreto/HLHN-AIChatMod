@@ -36,16 +36,16 @@ namespace DialogInterceptorMod.API
             _behaviour = behaviour;
         }
 
-        public IEnumerator SendMessage(string mensajeUsuario)
+        public IEnumerator SendMessage(string userMessage)
         {
             string url = NormalizeGemmaUrl(_behaviour.GemmaUrl);
             string model = _behaviour.GemmaModel;
 
-            string systemPrompt = PromptBuilder.GenerateSystemPrompt(mensajeUsuario);
-            string fullPrompt = BuildGemmaPrompt(systemPrompt, mensajeUsuario);
+            string systemPrompt = PromptBuilder.GenerateSystemPrompt(userMessage);
+            string fullPrompt = BuildGemmaPrompt(systemPrompt, userMessage);
 
-            string promptEscapado = JsonHelper.EscapeJson(fullPrompt);
-            string body = $"{{\"model\":\"{JsonHelper.EscapeJson(model)}\",\"prompt\":\"{promptEscapado}\",\"stream\":false,\"options\":{{\"num_predict\":{MAX_OUTPUT_TOKENS}}}}}";
+            string escapedPrompt = JsonHelper.EscapeJson(fullPrompt);
+            string body = $"{{\"model\":\"{JsonHelper.EscapeJson(model)}\",\"prompt\":\"{escapedPrompt}\",\"stream\":false,\"options\":{{\"num_predict\":{MAX_OUTPUT_TOKENS}}}}}";
 
             byte[] bodyBytes = Encoding.UTF8.GetBytes(body);
             UnityWebRequest request = new UnityWebRequest(url, "POST");
@@ -60,7 +60,7 @@ namespace DialogInterceptorMod.API
             {
                 string error = request.error;
                 string responseBody = request.downloadHandler?.text ?? "";
-                Plugin.Log.LogError($"Error de Gemma: {error} | Body: {responseBody}");
+                Plugin.Log.LogError($"Gemma error: {error} | Body: {responseBody}");
 
                 if (error != null && error.Contains("Cannot connect"))
                     _behaviour.Window.SetStatus("[ERROR] Cannot connect to Gemma server. Is Ollama running? (ollama serve)", true);
@@ -71,13 +71,13 @@ namespace DialogInterceptorMod.API
                 yield break;
             }
 
-            string respuesta = request.downloadHandler.text;
-            Plugin.Log.LogInfo($"Gemma raw response: {(respuesta.Length > 200 ? respuesta.Substring(0, 200) + "..." : respuesta)}");
+            string rawResponse = request.downloadHandler.text;
+            Plugin.Log.LogInfo($"Gemma raw response: {(rawResponse.Length > 200 ? rawResponse.Substring(0, 200) + "..." : rawResponse)}");
 
             // Ollama-style response: extract the "response" field.
-            string textoIA = JsonHelper.ExtractJsonValue(respuesta, "response");
+            string aiText = JsonHelper.ExtractJsonValue(rawResponse, "response");
 
-            if (string.IsNullOrEmpty(textoIA))
+            if (string.IsNullOrEmpty(aiText))
             {
                 _behaviour.Window.SetStatus("[ERROR] Empty response from Gemma.", true);
                 _behaviour.Window.AwaitingResponse = false;
@@ -85,9 +85,9 @@ namespace DialogInterceptorMod.API
             }
 
             // Stop at the model's own <end_of_turn> / next <start_of_turn> if it kept going.
-            textoIA = TruncateAtTurnBoundary(textoIA);
+            aiText = TruncateAtTurnBoundary(aiText);
 
-            AIResponseProcessor.ProcessResponse(textoIA, _behaviour, "Gemma");
+            AIResponseProcessor.ProcessResponse(aiText, _behaviour, "Gemma");
             _behaviour.Window.AwaitingResponse = false;
         }
 

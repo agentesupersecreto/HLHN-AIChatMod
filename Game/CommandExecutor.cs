@@ -52,7 +52,7 @@ namespace DialogInterceptorMod.Game
                     return ExecuteClothAction(slot, remove: false);
                 }
 
-                // 3. Kiss
+                // 3. Kiss ("beso" is a Spanish alias, kept for models answering in another language)
                 if (cmd == "kiss" || cmd == "beso")
                 {
                     if (!db.CmdKissEnabled) return "[CMD disabled: kiss]";
@@ -148,13 +148,12 @@ namespace DialogInterceptorMod.Game
             var mgr = DialogBehaviour.Instance.CurrentInteractionManager;
             if (mgr == null) return "No NPC interaction manager available.";
 
-            slot = slot.Trim().ToLowerInvariant();
+            slot = ToCanonicalSlot(slot.Trim().ToLowerInvariant());
             bool canAnimate = mgr.navigator != null && (!mgr.navigator.Working || mgr.navigator.PauseWork) && !mgr.removing;
 
             switch (slot)
             {
                 case "dress":
-                case "vestido":
                     if (mgr.Dress != null && mgr.Dress.activeSelf == remove)
                     {
                         if (canAnimate) mgr.PutRemoveDress(); else mgr.PutRemoveDressNOA();
@@ -163,8 +162,6 @@ namespace DialogInterceptorMod.Game
                     return mgr.Dress == null ? "Character has no dress." : $"Dress is already {(remove ? "removed" : "on")}.";
 
                 case "shirt":
-                case "camisa":
-                case "blusa":
                 case "top":
                     if (mgr.Shirt != null && mgr.Shirt.activeSelf == remove)
                     {
@@ -174,8 +171,6 @@ namespace DialogInterceptorMod.Game
                     return mgr.Shirt == null ? "Character has no shirt." : $"Shirt is already {(remove ? "removed" : "on")}.";
 
                 case "pants":
-                case "pantalon":
-                case "pantalones":
                 case "jeans":
                     if (mgr.Pants != null && mgr.Pants.activeSelf == remove)
                     {
@@ -185,7 +180,6 @@ namespace DialogInterceptorMod.Game
                     return mgr.Pants == null ? "Character has no pants." : $"Pants are already {(remove ? "removed" : "on")}.";
 
                 case "skirt":
-                case "falda":
                     if (mgr.Skirt != null && mgr.Skirt.activeSelf == remove)
                     {
                         if (canAnimate) mgr.RemoveSkirt(); else mgr.PutRemoveSkirtNOA();
@@ -194,9 +188,6 @@ namespace DialogInterceptorMod.Game
                     return mgr.Skirt == null ? "Character has no skirt." : $"Skirt is already {(remove ? "removed" : "on")}.";
 
                 case "bra":
-                case "sosten":
-                case "sujetador":
-                case "brasier":
                     if (mgr.Bra != null && mgr.Bra.activeSelf == remove)
                     {
                         if (canAnimate) mgr.RemoveBra(); else mgr.PutRemoveBraNOA();
@@ -206,9 +197,6 @@ namespace DialogInterceptorMod.Game
 
                 case "panty":
                 case "panties":
-                case "calzon":
-                case "calzones":
-                case "bragas":
                 case "underwear":
                     if (mgr.Panty != null && mgr.Panty.activeSelf == remove)
                     {
@@ -218,8 +206,6 @@ namespace DialogInterceptorMod.Game
                     return mgr.Panty == null ? "Character has no panties." : $"Panty is already {(remove ? "removed" : "on")}.";
 
                 case "socks":
-                case "medias":
-                case "calcetines":
                 case "stockings":
                     if (mgr.SocksStocking != null && mgr.SocksStocking.activeSelf == remove)
                     {
@@ -229,7 +215,6 @@ namespace DialogInterceptorMod.Game
                     return mgr.SocksStocking == null ? "Character has no socks." : $"Socks are already {(remove ? "removed" : "on")}.";
 
                 case "shoes":
-                case "zapatos":
                     if (mgr.Shoes != null && mgr.Shoes.activeSelf == remove)
                     {
                         if (canAnimate) mgr.RemoveShoes(); else mgr.PutRemoveShoesNOA();
@@ -238,8 +223,6 @@ namespace DialogInterceptorMod.Game
                     return mgr.Shoes == null ? "Character has no shoes." : $"Shoes are already {(remove ? "removed" : "on")}.";
 
                 case "jacket":
-                case "chaqueta":
-                case "abrigo":
                     if (mgr.Jacket != null && mgr.Jacket.activeSelf == remove)
                     {
                         if (canAnimate) mgr.RemoveJacket(); else mgr.RemoveJacketNOA();
@@ -248,7 +231,6 @@ namespace DialogInterceptorMod.Game
                     return mgr.Jacket == null ? "Character has no jacket." : $"Jacket is already {(remove ? "removed" : "on")}.";
 
                 case "belt":
-                case "cinturon":
                     if (mgr.Belt != null && mgr.Belt.activeSelf == remove)
                     {
                         if (canAnimate) mgr.RemoveBelt(); else mgr.RemoveBeltNOA();
@@ -257,8 +239,6 @@ namespace DialogInterceptorMod.Game
                     return mgr.Belt == null ? "Character has no belt." : $"Belt is already {(remove ? "removed" : "on")}.";
 
                 case "glasses":
-                case "lentes":
-                case "gafas":
                     if (mgr.Glasses != null && mgr.Glasses.activeSelf == remove)
                     {
                         if (canAnimate) mgr.RemoveGlasses(); else mgr.RemoveGlassesNOA();
@@ -267,7 +247,6 @@ namespace DialogInterceptorMod.Game
                     return mgr.Glasses == null ? "Character has no glasses." : $"Glasses are already {(remove ? "removed" : "on")}.";
 
                 case "gloves":
-                case "guantes":
                     if (mgr.Gloves != null && mgr.Gloves.activeSelf == remove)
                     {
                         if (canAnimate) mgr.RemoveGloves(); else mgr.RemoveGlovesNOA();
@@ -276,7 +255,6 @@ namespace DialogInterceptorMod.Game
                     return mgr.Gloves == null ? "Character has no gloves." : $"Gloves are already {(remove ? "removed" : "on")}.";
 
                 case "hat":
-                case "sombrero":
                     if (mgr.Hat != null && mgr.Hat.activeSelf == remove)
                     {
                         if (canAnimate) mgr.RemoveHat(); else mgr.RemoveHatNOA();
@@ -293,7 +271,6 @@ namespace DialogInterceptorMod.Game
                     return mgr.Collar == null ? "Character has no collar." : $"Collar is already {(remove ? "removed" : "on")}.";
 
                 case "all":
-                case "todo":
                     int count = 0;
                     if (mgr.Dress != null && mgr.Dress.activeSelf == remove) { mgr.PutRemoveDressNOA(); count++; }
                     if (mgr.Shirt != null && mgr.Shirt.activeSelf == remove) { mgr.PutRemoveShirtNOA(); count++; }
@@ -313,6 +290,58 @@ namespace DialogInterceptorMod.Game
 
                 default:
                     return $"Unknown cloth slot: {slot}";
+            }
+        }
+
+        /// <summary>
+        /// Maps cloth-slot spelling variants to the canonical English slot names used by the
+        /// command protocol. The Spanish synonyms are kept as data (not code) so that models
+        /// answering in another language, or prompts written before the switch to English
+        /// canonical names, still resolve to the right slot.
+        /// </summary>
+        private static string ToCanonicalSlot(string slot)
+        {
+            switch (slot)
+            {
+                case "vestido":
+                    return "dress";
+                case "camisa":
+                case "blusa":
+                    return "shirt";
+                case "pantalon":
+                case "pantalones":
+                    return "pants";
+                case "falda":
+                    return "skirt";
+                case "sosten":
+                case "sujetador":
+                case "brasier":
+                    return "bra";
+                case "calzon":
+                case "calzones":
+                case "bragas":
+                    return "panty";
+                case "medias":
+                case "calcetines":
+                    return "socks";
+                case "zapatos":
+                    return "shoes";
+                case "chaqueta":
+                case "abrigo":
+                    return "jacket";
+                case "cinturon":
+                    return "belt";
+                case "lentes":
+                case "gafas":
+                    return "glasses";
+                case "guantes":
+                    return "gloves";
+                case "sombrero":
+                    return "hat";
+                case "todo":
+                    return "all";
+                default:
+                    return slot;
             }
         }
 

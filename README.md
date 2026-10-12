@@ -42,10 +42,17 @@ A BepInEx mod for **He Lives Here Now** by EvilGuest, that integrates AI-powered
 
 ## Configuration
 
-On first run, a config file is created at:
+On first run the mod creates its own folder:
 ```
-%AppData%/../LocalLow/<GameName>/AIchat/config.txt
+<game_folder>/BepInEx/config/AIChat/
+├── HLHN_AIChatMod.ini   <- settings (also editable from the Settings panel)
+├── system_prompt.txt    <- editable system prompt template
+└── custom_prompt.txt    <- extra rules injected into every prompt
 ```
+
+Upgrading from an older version? Those files are moved here automatically on startup from their
+previous locations (`BepInEx/config/HLHN_AIChatMod.ini`, `BepInEx/AIchat/custom_prompt.txt` and
+`LocalLow/<GameName>/AIchat/system_prompt.txt`).
 
 You can also configure directly in the **Settings panel** (press F9 → `[SET]` button):
 
@@ -60,9 +67,24 @@ You can also configure directly in the **Settings panel** (press F9 → `[SET]` 
 | MaxHistory | `30` | Messages kept in context |
 | AllowTrustMod | `true` | Allow AI to modify NPC trust |
 
-### Custom System Prompt
+### Prompts: `system_prompt.txt` and `custom_prompt.txt`
 
-Place a file at `<game_folder>/BepInEx/config/AIchat/custom_prompt.txt` to inject additional instructions into every AI prompt.
+Both live in `<game_folder>/BepInEx/config/AIChat/` and are created automatically on first run.
+
+**`system_prompt.txt`** — the full system prompt template. Delete it and the mod regenerates the default one. These `{Placeholders}` are substituted on every request:
+
+| Placeholder | Contents |
+|---|---|
+| `{CharacterContext}` | NPC name, stats, trust thresholds, clothing state |
+| `{Memory}` | Per-character long-term memory block |
+| `{CustomRules}` | Your `custom_prompt.txt` text (as `[RULES] ...`) |
+| `{Jailbreak}` | Local-model uncensoring line (empty for Gemini) |
+| `{FormatInstruction}` | Plain-text `[CMD:]` mode or JSON mode, depending on the provider |
+| `{AllowedCommands}` | The command list sent to the model |
+
+**`custom_prompt.txt`** — appended to the prompt as an extra `[RULES]` block. Lines starting with `#` or `//` are comments and are ignored, so a fresh file adds nothing until you write something.
+
+Both files are re-read whenever they change on disk: edit, save, and keep playing — no restart needed.
 
 ---
 

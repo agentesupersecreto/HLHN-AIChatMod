@@ -15,91 +15,99 @@ namespace DialogInterceptorMod.API
     /// </summary>
     public static class AIResponseProcessor
     {
-        public static void ProcessResponse(string respuesta, DialogBehaviour behaviour, string clientName)
+        public static void ProcessResponse(string rawResponse, DialogBehaviour behaviour, string clientName)
         {
             try
             {
-                respuesta = JsonHelper.StripMarkdownCodeBlocks(respuesta);
-                string dialogo = respuesta;
-                var comandosEncontrados = new List<string>();
+                rawResponse = JsonHelper.StripMarkdownCodeBlocks(rawResponse);
+                string dialogue = rawResponse;
+                var foundCommands = new List<string>();
 
                 // Extract [CMD:] or [COMMAND:]
-                var matches = Regex.Matches(dialogo, @"\[(?:CMD|COMMAND):\s*([^\]]+)\]", RegexOptions.IgnoreCase);
+                var matches = Regex.Matches(dialogue, @"\[(?:CMD|COMMAND):\s*([^\]]+)\]", RegexOptions.IgnoreCase);
                 foreach (Match m in matches)
                 {
-                    string contenido = m.Groups[1].Value.Trim();
-                    dialogo = dialogo.Replace(m.Value, "");
+                    string commandContent = m.Groups[1].Value.Trim();
+                    dialogue = dialogue.Replace(m.Value, "");
 
-                    string[] subCmds = contenido.Split(new char[] { ',' }, StringSplitOptions.RemoveEmptyEntries);
+                    string[] subCmds = commandContent.Split(new char[] { ',' }, StringSplitOptions.RemoveEmptyEntries);
                     foreach (var sub in subCmds)
                     {
                         string c = sub.Trim();
                         if (!string.IsNullOrEmpty(c) && c.ToLower() != "null")
-                            comandosEncontrados.Add(c);
+                            foundCommands.Add(c);
                     }
                 }
-                dialogo = dialogo.Trim();
+                dialogue = dialogue.Trim();
 
-                // Handle JSON responses (some models emit JSON even in plain-text mode)
-                if (dialogo.StartsWith("{") && dialogo.Contains("\"dialogo\""))
+                // Handle JSON responses (some models emit JSON even in plain-text mode).
+                // English keys are the documented protocol; the Spanish keys are legacy
+                // (older prompts and user-edited system_prompt.txt templates) and still work.
+                if (dialogue.StartsWith("{") && (dialogue.Contains("\"dialogue\"") || dialogue.Contains("\"dialogo\"")))
                 {
-                    string innerDialogo = JsonHelper.ExtractJsonValue(dialogo, "dialogo");
-                    if (!string.IsNullOrEmpty(innerDialogo))
+                    string innerDialogue = JsonHelper.ExtractJsonValue(dialogue, "dialogue");
+                    if (string.IsNullOrEmpty(innerDialogue))
+                        innerDialogue = JsonHelper.ExtractJsonValue(dialogue, "dialogo");
+
+                    if (!string.IsNullOrEmpty(innerDialogue))
                     {
-                        string innerComando = JsonHelper.ExtractJsonValue(dialogo, "comando");
-                        if (!string.IsNullOrEmpty(innerComando))
+                        string innerCommand = JsonHelper.ExtractJsonValue(dialogue, "command");
+                        if (string.IsNullOrEmpty(innerCommand))
+                            innerCommand = JsonHelper.ExtractJsonValue(dialogue, "comando");
+
+                        if (!string.IsNullOrEmpty(innerCommand))
                         {
-                            string[] subCmds = innerComando.Split(new char[] { ',' }, StringSplitOptions.RemoveEmptyEntries);
+                            string[] subCmds = innerCommand.Split(new char[] { ',' }, StringSplitOptions.RemoveEmptyEntries);
                             foreach (var sub in subCmds)
                             {
                                 string c = sub.Trim();
-                                if (!string.IsNullOrEmpty(c) && c.ToLower() != "null" && !comandosEncontrados.Contains(c))
-                                    comandosEncontrados.Add(c);
+                                if (!string.IsNullOrEmpty(c) && c.ToLower() != "null" && !foundCommands.Contains(c))
+                                    foundCommands.Add(c);
                             }
                         }
-                        dialogo = innerDialogo;
+                        dialogue = innerDialogue;
                     }
                 }
 
-                // Extract [STYLE: estilo]
-                string estiloDetectado = null;
-                var styleMatches = Regex.Matches(dialogo, @"\[STYLE:\s*([^\]]+)\]", RegexOptions.IgnoreCase);
+                // Extract [STYLE: name]
+                string detectedStyle = null;
+                var styleMatches = Regex.Matches(dialogue, @"\[STYLE:\s*([^\]]+)\]", RegexOptions.IgnoreCase);
                 foreach (Match m in styleMatches)
                 {
-                    estiloDetectado = m.Groups[1].Value.Trim();
-                    dialogo = dialogo.Replace(m.Value, "");
+                    detectedStyle = m.Groups[1].Value.Trim();
+                    dialogue = dialogue.Replace(m.Value, "");
                 }
 
-                dialogo = dialogo.Trim();
+                dialogue = dialogue.Trim();
 
-                if (string.IsNullOrEmpty(dialogo) && comandosEncontrados.Count == 0)
+                if (string.IsNullOrEmpty(dialogue) && foundCommands.Count == 0)
                 {
                     behaviour.Window.SetStatus($"[ERROR] Empty or invalid response from {clientName}.", true);
                     return;
                 }
 
-                if (!string.IsNullOrEmpty(dialogo))
+                if (!string.IsNullOrEmpty(dialogue))
                 {
                     // Add to chat history
-                    behaviour.ChatHistory.Add(new ChatMessage(false, dialogo));
+                    behaviour.ChatHistory.Add(new ChatMessage(false, dialogue));
                     behaviour.Memory.TotalExchangeCount++;
-                    behaviour.Memory.AutoTag(dialogo, true);
+                    behaviour.Memory.AutoTag(dialogue, true);
                     behaviour.Window.ScrollToBottom();
                     behaviour.Window.SetStatus($"[OK] Response received ({clientName}).", false);
 
                     // *** KEY: Show the AI response in the game's native dialogue system ***
-                    ShowInGameDialogue(behaviour, dialogo);
+                    ShowInGameDialogue(behaviour, dialogue);
 
                     // Sentiment analysis → Trust modification
-                    if (!string.IsNullOrEmpty(estiloDetectado))
+                    if (!string.IsNullOrEmpty(detectedStyle))
                     {
-                        string sentimentFeedback = SentimentAnalyzer.ApplySentimentFromStyle(estiloDetectado);
+                        string sentimentFeedback = SentimentAnalyzer.ApplySentimentFromStyle(detectedStyle);
                         if (!string.IsNullOrEmpty(sentimentFeedback))
                             behaviour.AddCapturedEvent(sentimentFeedback);
                     }
                     else
                     {
-                        string sentimentFeedback = SentimentAnalyzer.ApplySentiment(dialogo);
+                        string sentimentFeedback = SentimentAnalyzer.ApplySentiment(dialogue);
                         if (!string.IsNullOrEmpty(sentimentFeedback))
                             behaviour.AddCapturedEvent(sentimentFeedback);
                     }
@@ -110,7 +118,7 @@ namespace DialogInterceptorMod.API
                 }
 
                 // Execute embedded commands
-                foreach (string cmd in comandosEncontrados)
+                foreach (string cmd in foundCommands)
                 {
                     string feedback = CommandExecutor.ExecuteCommand(
                         cmd, 
@@ -120,7 +128,7 @@ namespace DialogInterceptorMod.API
                     behaviour.AddCapturedEvent($"[CMD] {feedback}");
                 }
 
-                if (comandosEncontrados.Count > 0)
+                if (foundCommands.Count > 0)
                     behaviour.Window.ScrollToBottom();
 
                 // Save history
@@ -138,14 +146,14 @@ namespace DialogInterceptorMod.API
         /// Uses Speach.Say() on the current NPC, which makes ShowDialogue display it
         /// with the NPC's name above their head.
         /// </summary>
-        private static void ShowInGameDialogue(DialogBehaviour behaviour, string texto)
+        private static void ShowInGameDialogue(DialogBehaviour behaviour, string text)
         {
             try
             {
                 // Route through the NPC's Speach component. The IsAIResponse echo guard is
                 // toggled around the actual Say() call inside DialogBehaviour.SayWhenIdle(),
                 // so it also covers retries and the [CMD: say] path.
-                behaviour.ShowAIResponseInGame(texto);
+                behaviour.ShowAIResponseInGame(text);
             }
             catch (Exception ex)
             {

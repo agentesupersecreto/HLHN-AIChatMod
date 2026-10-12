@@ -17,10 +17,13 @@ namespace DialogInterceptorMod.Game
     }
 
     /// <summary>
-    /// Multilingual intent detector for player chat messages (Spanish, English, etc.).
-    /// Detects requests such as "sígueme", "follow me", "quítate el vestido", "remove panties",
-    /// "bésame", etc. Compares against the character's active equipment and thresholds,
-    /// and formats guidance for the AI to accept or refuse based on trust and personality.
+    /// Heuristic intent detector for player chat messages.
+    ///
+    /// The AI model itself understands ANY language (English, Spanish, Portuguese, Russian,
+    /// German, etc.), and it always receives the player's raw message. These keyword lists
+    /// (English + Spanish synonyms) exist only to add explicit trust/clothing threshold
+    /// guidance when a request is recognized. When nothing matches, no guidance is emitted
+    /// and the AI still decides on its own.
     /// </summary>
     public static class ActionIntentDetector
     {
@@ -127,12 +130,12 @@ namespace DialogInterceptorMod.Game
 
         private static bool IsFollowStart(string text)
         {
-            // Spanish
+            // Spanish keywords (data, not code: kept so non-English players are detected)
             if (text.Contains("sigueme") || text.Contains("ven conmigo") || text.Contains("acompaname") || 
                 text.Contains("camina conmigo") || text.Contains("vamos conmigo") || text.Contains("ven aca") || text.Contains("ven aqui"))
                 return true;
 
-            // English
+            // English keywords
             if (text.Contains("follow me") || text.Contains("come with me") || text.Contains("walk with me") || 
                 text.Contains("come along") || text.Contains("follow") || text.Contains("tag along"))
                 return true;
@@ -142,12 +145,12 @@ namespace DialogInterceptorMod.Game
 
         private static bool IsFollowStop(string text)
         {
-            // Spanish
+            // Spanish keywords (data, not code)
             if (text.Contains("deja de seguirme") || text.Contains("no me sigas") || text.Contains("quedate aqui") || 
                 text.Contains("espera aqui") || text.Contains("detente") || text.Contains("para de seguirme"))
                 return true;
 
-            // English
+            // English keywords
             if (text.Contains("stop following") || text.Contains("dont follow") || text.Contains("don't follow") || 
                 text.Contains("stay here") || text.Contains("wait here") || text.Contains("unfollow"))
                 return true;
@@ -157,12 +160,12 @@ namespace DialogInterceptorMod.Game
 
         private static bool IsKiss(string text)
         {
-            // Spanish
+            // Spanish keywords (data, not code)
             if (text.Contains("besame") || text.Contains("dame un beso") || text.Contains("un beso") || 
                 text.Contains("quiero besarte") || text.Contains("te puedo besar"))
                 return true;
 
-            // English
+            // English keywords
             if (text.Contains("kiss me") || text.Contains("give me a kiss") || text.Contains("can i kiss you") || 
                 text.Contains("kiss you"))
                 return true;
