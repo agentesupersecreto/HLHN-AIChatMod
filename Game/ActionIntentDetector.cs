@@ -13,7 +13,8 @@ namespace DialogInterceptorMod.Game
         FollowStop,
         RemoveCloth,
         PutCloth,
-        Kiss
+        Kiss,
+        GoToPlace
     }
 
     /// <summary>
@@ -57,7 +58,11 @@ namespace DialogInterceptorMod.Game
                 return sb.ToString();
             }
 
-            // 2. Kiss
+            // 2. Go to a place in the house ("go to the kitchen", "vete a la cocina", "lie in bed")
+            if (PlaceMatcher.IsGoToRequest(userMessage) || PlaceMatcher.IsPlacesQuestion(userMessage))
+                return BuildGoToGuidance(userMessage, snapshot);
+
+            // 3. Kiss
             if (IsKiss(normalized))
             {
                 var sb = new StringBuilder();
@@ -69,7 +74,7 @@ namespace DialogInterceptorMod.Game
                 return sb.ToString();
             }
 
-            // 3. Remove Clothes
+            // 4. Remove Clothes
             string removeSlot = DetectClothSlot(normalized, isRemoval: true);
             if (!string.IsNullOrEmpty(removeSlot))
             {
@@ -100,7 +105,7 @@ namespace DialogInterceptorMod.Game
                 return sb.ToString();
             }
 
-            // 4. Put Clothes Back On
+            // 5. Put Clothes Back On
             string putSlot = DetectClothSlot(normalized, isRemoval: false);
             if (!string.IsNullOrEmpty(putSlot))
             {
@@ -126,6 +131,65 @@ namespace DialogInterceptorMod.Game
             }
 
             return "";
+        }
+
+        /// <summary>
+        /// Guidance for "take me / go to a place" requests. The place names come from the game's own
+        /// routine chores (plus locations.txt), because the model cannot guess how the house names
+        /// its spots. Movement is gated by the same trust value as following.
+        /// </summary>
+        private static string BuildGoToGuidance(string userMessage, CharacterContextSnapshot snapshot)
+        {
+            var sb = new StringBuilder();
+            bool wantsList = PlaceMatcher.IsPlacesQuestion(userMessage);
+            string phrase = PlaceMatcher.ExtractPlacePhrase(userMessage);
+            bool meetsThreshold = snapshot.Trust >= snapshot.ValueToFollow;
+
+            sb.AppendLine(wantsList
+                ? "\n[DETECTED PLAYER REQUEST: WHERE CAN YOU GO]"
+                : "\n[DETECTED PLAYER REQUEST: GO SOMEWHERE IN THE HOUSE]");
+
+            if (!string.IsNullOrEmpty(phrase))
+                sb.AppendLine($"- Place the player seems to be asking for: \"{phrase}\"");
+
+            string places = GetKnownPlaces();
+            if (!string.IsNullOrEmpty(places))
+                sb.AppendLine($"- Places available in this house right now: {places}");
+            else
+                sb.AppendLine("- No place list available (no NPC tracked right now).");
+
+            sb.AppendLine($"- Required Trust threshold for going somewhere on his word: {snapshot.ValueToFollow:F0} (Your Trust: {snapshot.Trust:F0} -> {(meetsThreshold ? "MEETS THRESHOLD" : "BELOW THRESHOLD")})");
+            sb.AppendLine($"- Submission: {snapshot.Submission}, Desire: {snapshot.Desire}");
+
+            if (wantsList)
+            {
+                sb.AppendLine("- The player wants to know where you can go: answer with the places above, in character.");
+                sb.AppendLine("- You may also include [CMD: places] so the game chat prints the list.");
+                return sb.ToString();
+            }
+
+            sb.AppendLine("- DECISION: Only if the player really asked you to move to one of the places above AND you are willing to go:");
+            sb.AppendLine("  * IF YOU ACCEPT: include [CMD: goto:PLACE], where PLACE is copied from the list above character for character, nothing else after it (the house accepts both its rooms and its chores: [CMD: goto:Do laundry], [CMD: goto:Sweeping Kitchen]). Optionally how long you stay, in in-game hours: [CMD: goto:Do laundry:2].");
+            sb.AppendLine("  * IF YOU REFUSE, or it was not a real request to move: do NOT include the command, just answer in character (annoyed, busy, shy...).");
+            return sb.ToString();
+        }
+
+        /// <summary>Known places for the current NPC, defensively (the detector runs on every turn).</summary>
+        private static string GetKnownPlaces()
+        {
+            try
+            {
+                // The list is the AI's menu: the houses expose around twenty places, so the cap is
+                // only a guard against a pathological locations.txt.
+                string list = MovementHelper.GetAvailableGoToTargets();
+                if (string.IsNullOrEmpty(list)) return "";
+                return list.Length > 700 ? list.Substring(0, 700) : list;
+            }
+            catch (Exception ex)
+            {
+                Plugin.LogDebug($"Could not list places for the prompt: {ex.Message}");
+                return "";
+            }
         }
 
         private static bool IsFollowStart(string text)

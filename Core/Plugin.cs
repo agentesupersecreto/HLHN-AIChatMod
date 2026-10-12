@@ -22,6 +22,12 @@ namespace DialogInterceptorMod.Core
         public const string CustomPromptFileName = "custom_prompt.txt";
 
         /// <summary>
+        /// File name of the optional extra places file, inside <see cref="ConfigDir"/>:
+        /// "name = x,y,z[,animation]" lines adding destinations for the goto command.
+        /// </summary>
+        public const string LocationsFileName = "locations.txt";
+
+        /// <summary>
         /// Folder holding every user file of the mod (settings, prompts): BepInEx/config/AIChat.
         /// Created on demand so the user always has the files to edit.
         /// </summary>

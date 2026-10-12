@@ -45,6 +45,7 @@ namespace DialogInterceptorMod.Core
 
         // --- Command toggles (fields, not properties, so the Settings tab can pass them by ref) ---
         public bool CmdFollowEnabled      = true;
+        public bool CmdGoToEnabled        = true;
         public bool CmdClothesEnabled     = true;
         public bool CmdKissEnabled        = true;
         public bool CmdTrustModEnabled    = true;
@@ -108,8 +109,9 @@ namespace DialogInterceptorMod.Core
 
             Window = new ChatWindow(this);
 
-            // Creates BepInEx/config/AIChat/{system_prompt,custom_prompt}.txt on first run
+            // Creates BepInEx/config/AIChat/{system_prompt,custom_prompt,locations}.txt on first run
             PromptBuilder.EnsurePromptFiles();
+            Game.LocationCatalog.EnsureLocationsFile();
         }
 
         private void Start()

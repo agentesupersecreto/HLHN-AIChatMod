@@ -52,9 +52,21 @@ AIResponseProcessor.cs
 CommandExecutor.cs
     └── ExecuteCommand(cmd)
         → follow / unfollow (NpcNavigatorAndRutines.MakeNpcFollowMe)
+        → goto:<place> / places → NpcGoToHandler
         → put/remove clothes (NpcInteractionManager methods)
         → kiss (NpcInteractionManager.KissHer or Emotions.NpcKiss)
         → modify_trust, modify_emotion, make_face, say
+
+Game/LocationCatalog.cs + Game/PlaceMatcher.cs
+    └── What places exist in the current scene, and which one a player/AI name refers to
+        → routine chores (Chore assets) + ChoreInPlace spots + locations.txt
+
+Game/NpcGoToHandler.cs
+    └── GoTo(place, hours) : string + Run() : IEnumerator
+        → trust gate (CommandExecutor.CheckFollowThreshold)
+        → stop following, end current chore
+        → injects a temporary entry into CurrentDayChores
+        → the game's own CheckForChores()/StartWorking() do the walking + animation
 ```
 
 ---
@@ -68,6 +80,8 @@ Everything the user can edit lives in **`BepInEx/config/AIChat/`**, created on f
 | `HLHN_AIChatMod.ini` | Settings | `ChatWindow.SaveConfig()` (created on first launch) |
 | `system_prompt.txt` | Editable system prompt template with `{Placeholder}` substitution | `PromptBuilder.EnsurePromptFiles()` |
 | `custom_prompt.txt` | Extra `[RULES]` text; `#` and `//` lines are comments | `PromptBuilder.EnsurePromptFiles()` |
+| `locations.txt` | Optional extra places for the `goto` command (`name = x,y,z[,animation]`) | `LocationCatalog.EnsureLocationsFile()` |
+| `locations_dump.txt` | Diagnostic dump of every place the game knows (written on demand from the `[DBG]` tab) | `LocationCatalog.Dump()` |
 
 - **Never hardcode these paths** — always use `Plugin.ConfigDir` / `Plugin.GetConfigFilePath(Plugin.<X>Name)`, so a path change only touches `Plugin.cs`.
 - `Plugin.MigrateFile()` imports files from older layouts on startup (`BepInEx/config/HLHN_AIChatMod.ini`, `BepInEx/AIchat/custom_prompt.txt`, `LocalLow/<Game>/AIchat/system_prompt.txt`).
@@ -115,9 +129,77 @@ The mod registers a dummy `GameObject` (`AIChat_MenuDummy`) with `NotMove.AddMen
 ## Adding New Commands
 
 1. Add a new case to `CommandExecutor.ExecuteCommand()`.
-2. Add a description and example to `PromptBuilder.BuildActionSection()` so the AI knows the command exists.
+2. Add a description and example to `PromptBuilder.BuildCommandList()` so the AI knows the command exists.
 3. Add intent examples to `ActionIntentDetector` if you want natural-language triggering.
-4. Update the command table in `README.md`.
+4. Add a toggle to `DialogBehaviour` (`Cmd<X>Enabled`), to `ChatWindow.DrawSettings()` and to `SaveConfig()`/`LoadConfig()`.
+5. Update the command table in `README.md`.
+
+---
+
+## Sending an NPC somewhere (`goto`)
+
+The game has **no room/waypoint system**: NPC movement is driven by *chores* — `Chore` ScriptableObjects
+(`AnimationName`, `Pos`, `Rot`) held by `NpcNavigatorAndRutines.Chores` entries with a time window,
+optional `UseObject` and an outfit. `LocationCatalog` turns those (plus `ChoreInPlace` spots placed in the
+scene, plus user-defined `locations.txt` entries) into a flat list of places, and `PlaceMatcher` resolves a
+name or a sentence against the list using keyword groups (English + Spanish synonyms, because the game
+mixes both languages in its asset names).
+
+The house names most of its spots after the chore performed there (`WashingPlates`, `DustingLivingRoom`,
+`CheckingClothBasement`, `SusanPraying`, `ListenMusicRoom`, `StacyPhoneBedRoom`...), which is why
+`PlaceMatcher` keeps **two vocabularies**:
+
+- `AreaSynonyms` — rooms and the furniture a player may name for them, **one concept per group**
+  (`living`, `sofa` and `tv` are separate groups so that asking for one cannot drag in another spot of
+  the same room; the bedroom group carries `bed` so that *"go to the bedroom"* reaches spots the game
+  spells `BedRoom`). What she *does* there is a chore, never a room word, which is what keeps *"go to
+  the bedroom"* (a room) apart from *"go to sleep"* (an activity).
+- `ChoreSynonyms` — the housework the routine spots are named after. Washing up and the laundry are
+  separate groups even though the game calls both "washing".
+
+Scoring (`PlaceMatcher.ScoreRequest`): a request is read twice — as a whole (the AI copies a label, so a
+label must match as-is) and as the destination extracted from it ("go to the kitchen" → "kitchen") — and
+the better reading wins. Each reading scores `area * 3 + chore + general`, plus a bonus when a spot
+matches both the room and the chore. `LocationCatalog.Resolve()` first returns a spot whose label equals
+the query (normalized), then the best score, ties broken by distance to the NPC.
+
+How a visit runs (`NpcGoToHandler`):
+
+1. Refuse unless `Emotions.Trust >= Emotions.ValueToFollow` — the same rule the game uses in
+   `NpcInteractionManager.NpcFollow()` / `NpcNavigatorAndRutines.Update()`.
+2. `MakeNpcFollowMe()` if she is following (follow mode drives the agent every frame).
+3. `EndChore(true)` if she is working — the game's own "finish this chore now".
+4. Build a copy of the spot's routine entry (or a synthetic `Chore` for config spots) with
+   `StartTime = now`, `EndTime = min(now + hours, CurrentEndChore.StartTime - 0.05)`, insert it at the
+   head of `CurrentDayChores`.
+5. `CheckForChores()` picks it up on the next frame and `StartWorking()` walks her there, plays the
+   spot's animation and cleans everything up when the window ends (it removes the entry itself).
+
+Rules that keep this safe:
+
+- **Never mutate the routine's own chore entry** — always copy it; the routine must survive the detour.
+- Candidate spots are validated with `NavMesh.SamplePosition()`: positions that are not on the current
+  scene's NavMesh belong to another map (routines are stored per scene) and are dropped.
+- Places are identified by **Chore asset + rounded position** (`PlaceKey`): the routine lists the same
+  chore twice (asset name and `Desc`, e.g. `WashingPlates` / *Wash the plates*) and both entries would
+  otherwise fill the AI's list; two *different* chores standing at the same spot stay separate (the game
+  has a living-room and a dining-room dusting chore 16 cm apart).
+- Labels are made readable with `PlaceMatcher.PrettyLabel()`: the routine's `Desc` when it has one,
+  otherwise the asset name spaced out (`DustingUpstair` → *Dusting Upstair*) with the owner prefix
+  dropped (`SusanLookingKitchen` → *Looking Kitchen*, `StacyPhoneBedRoom` → *Phone Bed Room*) — asset
+  names are named after the NPC and an NPC only ever lists her own spots. The raw asset name stays in the
+  spot's keywords, so both spellings keep matching.
+- **Every NPC has her own spots** (Katherine's chores, Susan's *Looking…*/*Praying* spots, Stacy's
+  *Phone…*/*Smoking*/*Listen Music* ones): the list is built per NPC from her own routine arrays, never
+  shared between them.
+- The list handed to the AI is sorted (config → routine → placed spot, then by name) and capped at
+  `MAX_LISTED_SPOTS` (24): the AI can only send her somewhere whose name it was shown. Keep that list and
+  the 700-character cap in `ActionIntentDetector.GetKnownPlaces()` in mind when adding sources.
+- `CheckForChores()` needs `!Working`, `!PauseWork`, `!PlayingAnimation` and
+  `ActualTime < CurrentEndChore.StartTime`; the handler waits for the first three and refuses the order
+  when the day is over, instead of writing to game state from outside.
+- Stopping what she is doing only happens through the public API (`EndChore`, `MakeNpcFollowMe`),
+  never by driving `NavMeshAgent` by hand or by poking `PauseWork`, which other systems also own.
 
 > **Trust gates are enforced in code, not only in the prompt.** The game gates its own actions in
 > `NpcInteractionManager` (`NpcFollow()` → `ValueToFollow`, `KissHer()` → `ValueToKiss`,
@@ -151,7 +233,9 @@ Key files:
 | `Emotions.cs` | Trust, submission, perversion, desire, horny, facial expressions |
 | `TalkInteractions.cs` | Dialogue tree data, personality traits |
 | `NpcInteractionManager.cs` | All clothing slots and interaction methods |
-| `NpcNavigatorAndRutines.cs` | Follow, routines, work state |
+| `NpcNavigatorAndRutines.cs` | Follow, routines, work state (`Chores`, `CheckForChores()`, `StartWorking()`, `EndChore()`) |
+| `Chore.cs` | ScriptableObject with the position/rotation/animation of a routine spot |
+| `ChoreInPlace.cs` | Scene-placed spot (trigger + `SexZone`) shared by every NPC |
 | `NotMove.cs` | Cursor / input lock when menus are open |
 | `ShowDialogue.cs` | Game UI for showing dialogue boxes |
 
@@ -167,6 +251,13 @@ Key files:
 - [ ] Typing a message and pressing Enter sends it.
 - [ ] AI response appears in the **chat window** and as a **speech bubble**.
 - [ ] Commands like "follow me", "remove your dress" work as expected.
+- [ ] "go to the kitchen" makes her **walk** there and settle (animation of that spot); `[DBG]` shows
+      `Places here` > 0 and the active `GoTo order`.
+- [ ] `[DBG] → Dump locations` writes `locations_dump.txt` with the places and the player's position;
+      a chore the routine lists twice (asset name + description) appears only once, with a readable name.
+- [ ] "wash the dishes" / "do the laundry" / "sweep the hallway" / "vete a la cocina" each send her to
+      the matching spot (the chore can be one of the routine's own, e.g. *Sweeping Hallway*).
+- [ ] Below `ValueToFollow` the `goto` order is refused with a Trust message and she stays put.
 - [ ] After a **scene change**, the UI background stays opaque (not transparent).
 - [ ] Buttons display **ASCII text** (no blank squares).
 - [ ] Settings panel saves correctly and persists across restarts.

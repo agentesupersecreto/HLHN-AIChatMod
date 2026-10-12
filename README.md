@@ -11,6 +11,8 @@ A BepInEx mod for **He Lives Here Now** by EvilGuest, that integrates AI-powered
 - 🧠 **Character Context** — AI receives the NPC's full personality, trust, emotions, clothing status and available actions before responding.
 - 🎮 **Action Commands** — AI can trigger native game actions embedded in its replies:
   - Follow / Stop following
+  - Go to a place in the house (kitchen, sofa, bed, bathroom, outside...) or to the spots the routine
+    knows by task (do the laundry, sweep the hallway, water the plants...)
   - Put/Remove any clothing item
   - Kiss, facial expressions
   - Trust & emotion modifications
@@ -47,7 +49,8 @@ On first run the mod creates its own folder:
 <game_folder>/BepInEx/config/AIChat/
 ├── HLHN_AIChatMod.ini   <- settings (also editable from the Settings panel)
 ├── system_prompt.txt    <- editable system prompt template
-└── custom_prompt.txt    <- extra rules injected into every prompt
+├── custom_prompt.txt    <- extra rules injected into every prompt
+└── locations.txt        <- optional extra places for the "go to" command
 ```
 
 Upgrading from an older version? Those files are moved here automatically on startup from their
@@ -66,6 +69,7 @@ You can also configure directly in the **Settings panel** (press F9 → `[SET]` 
 | ApiKey | *(empty)* | Gemini API key |
 | MaxHistory | `30` | Messages kept in context |
 | AllowTrustMod | `true` | Allow AI to modify NPC trust |
+| AI Commands | all `ON` | Per-command toggles (`follow`, `go to a place`, `clothes`, `kiss`, ...) stored in the `[Commands]` section of the `.ini` |
 
 ### Prompts: `system_prompt.txt` and `custom_prompt.txt`
 
@@ -118,6 +122,8 @@ The AI can embed special command tags in its responses to trigger game actions. 
 |---|---|---|---|
 | `follow` | `[CMD:follow]` | NPC starts following the player | `Trust >= ValueToFollow` |
 | `follow:stop` | `[CMD:follow:stop]` | NPC stops following | — |
+| `goto:<place>` | `[CMD:goto:Do laundry]` | NPC walks to a place in the house and stays there doing what is done at that spot — a room (*kitchen*, *bathroom*...) or one of the house chores the routines know (*Do laundry*, *Sweeping Kitchen*, *Watering Living Plant*...) | `Trust >= ValueToFollow` |
+| `places` | `[CMD:places]` | Lists the places the NPC can go to in this house | — |
 | `remove_cloth:<slot>` | `[CMD:remove_cloth:dress]` | Remove a clothing item | `Trust >= ValueToUndress` |
 | `put_cloth:<slot>` | `[CMD:put_cloth:bra]` | Put on a clothing item | — |
 | `kiss` | `[CMD:kiss]` | NPC kisses the player | `Trust >= ValueToKiss` |
@@ -127,6 +133,78 @@ The AI can embed special command tags in its responses to trigger game actions. 
 | `say:<text>` | `[CMD:say:Come here]` | Force the NPC to speak the text in-game | — |
 
 The thresholds are **enforced in code** (`CommandExecutor.CheckFollowThreshold()` / `CheckUndressThreshold()`, mirroring the game's own `NpcInteractionManager` checks), not only requested in the prompt: below the threshold the command returns a refusal feedback line and does nothing, and the reply still reaches the chat window.
+
+### Sending an NPC somewhere (`goto`)
+
+Ask in plain language — *"go to the kitchen"*, *"wait for me in the bedroom"*, *"sit on the sofa"*,
+*"do the laundry"*, *"sweep the hallway"*, *"water the plants"*, *"go pray"*, *"call your friend"*,
+*"vete a la cocina"*, *"haz la colada"* — and the NPC walks there on her own. The AI receives
+the list of places the current NPC can reach and answers with `[CMD: goto:<place>]`; the mod then:
+
+1. checks `Trust >= ValueToFollow` (the same requirement the game uses to let her follow you) and refuses
+   in character if it is not met — no movement happens,
+2. stops following and ends whatever chore she was busy with,
+3. hands her a temporary chore for that spot and lets the **game's own routine system** walk her there,
+   play the spot's animation (sit on the sofa, lie on the bed, cook...) and return to her routine when the
+   visit is over.
+
+The places come from the game itself — the first two sources are read from the running game, the third is
+optional and hand-written:
+
+| Source | What it is |
+|---|---|
+| Routine spots | The chores of *that* NPC's weekly routine (Monday..Sunday, specials, end-of-day). Real animation, objects and outfit. |
+| Placed spots | `ChoreInPlace` spots placed in the scene, shared by every NPC. |
+| `locations.txt` | Your own coordinates, for rooms the routines never visit. |
+
+Optional stay: `goto:Do laundry:2` keeps her there for 2 in-game hours (default 1, capped so the visit
+always fits before her end-of-day chore).
+
+**Finding the places of your house.** The mod ships no room list — it asks the game. The names it offers
+are the game's own, and since the house names most of its spots after what is done there, **every NPC has
+her own list** (each one knows only the spots of her own routine). These are the real lists reported by
+**Dump locations** on the house map:
+
+```
+Katherine (19): Broom upstair, Clean bathroom, Cleaning Kitchen Counter, Cook, Do laundry, Dust the
+  living room, Dust upstair, Dusting Dinning Room, Kat End Day, Scrubbing Bathroom, Stuck Sink,
+  Sweeping Dinner Room, Sweeping Hallway, Sweeping Kitchen, Sweeping Living Room, Washing Plates,
+  Watering Kitchen Plant, Watering Living Plant, Watering Upstair Plant
+
+Susan (14): Drinking Livingroom, Eating, Looking Basement, Looking Bedroom, Looking Dinner Room,
+  Looking Downstair Bathroom, Looking Kitchen, Looking Living, Looking Outside, Looking Stacy,
+  Looking Upstair, Looking Upstair Bathroom, Praying, Sleeping
+
+Stacy (14): Eating, Hide Smoking, Listen Music Room, Listen Music Upstair, Masturbating In Her Room,
+  Phone Bed Room, Phone Dinnerroom, Phone Living Room, Phone Upstair Living Room, Sleep, Smoking
+  Outside, Stuck Window, Sunbathing, Watching TV
+```
+
+Asset names carry the owner's name (`SusanLookingKitchen`, `StacyPhoneBedRoom`); the prefix is dropped
+because an NPC only ever lists her own spots, so the list reads *Looking Kitchen* rather than *Susan
+Looking Kitchen*.
+
+The AI gets that list on every turn and copies one name into `[CMD: goto:<place>]`; a request that equals
+a name exactly goes straight to that place. Plain language works too, through two synonym tables
+(English + Spanish, because the game mixes both in its asset names):
+
+| What the player says | What it is matched against |
+|---|---|
+| **Rooms** — *kitchen*, *bathroom*, *bedroom*, *living room*, *dining room*, *hallway*, *upstairs*, *basement*, *outside*, *cocina*, *baño*... | the room part of a spot's name. The room weighs three times the chore, so "dust the dining room" resolves to a dining-room spot. Furniture is kept separate (*sofa*, *tv*), so "sit on the sofa" cannot land on the spot that watches TV |
+| **Tasks** — *wash the dishes*, *do the laundry*, *sweep*, *dust*, *mop*/*scrub*/*wipe*, *vacuum*, *water the plants*, *cook*, *eat*, *sleep*, *pray*, *listen to music*, *use the phone*, *smoke*, *sunbathe*, *look around*, *drink*, *clean*, *lavar los platos*, *hacer la colada*, *barrer*, *regar*, *reza*, *fumar*... | the task part of a name (`WashingPlates`, `CheckingClothBasement`, `SweepingHallway`, `SusanPraying`, `ListenMusicRoom`, `StacyPhoneBedRoom`, `StacySmokingOutside`...). Washing up and the laundry are told apart even though the game calls both "washing" |
+
+A chore the routine lists twice (asset name *and* description, e.g. `WashingPlates` / *Wash the plates*)
+appears once, and asset names are spaced out for readability (`DustingUpstair` → *Dusting Upstair*). Press
+F9 → `[DBG]` → **Dump locations** to write `locations_dump.txt`, which lists every place with its
+coordinates, animation and keywords plus your own position — perfect for copying lines into
+`locations.txt`:
+
+```
+# locations.txt  (BepInEx/config/AIChat/)
+kitchen = 12.50,0.30,8.20
+outside = 30.00,0.00,-12.00
+sofa    = -3.20,0.30,4.75,Sit_Sofa
+```
 
 ### Clothing Slots
 
@@ -158,6 +236,10 @@ HLHN/
 │   └── SpamFilter.cs           # Deduplication of captured dialogue
 ├── Game/                   # Game integration
 │   ├── CommandExecutor.cs      # Executes AI-embedded commands
+│   ├── NpcGoToHandler.cs       # "go to a place" order (routine chore injection)
+│   ├── LocationCatalog.cs      # Places read from the game + locations.txt
+│   ├── PlaceMatcher.cs         # Place name/sentence resolution (pure logic)
+│   ├── MovementHelper.cs       # Available places for the prompt
 │   └── ActionIntentDetector.cs # Detects player intent from free text
 ├── Models/                 # Data models
 │   └── ChatMessage.cs
@@ -176,6 +258,9 @@ HLHN/
 | No speech bubble appears | Approach the NPC closer so `SpeachListener` detects them |
 | AI returns empty responses | Check Ollama is running (`ollama serve`) or verify your Gemini API key |
 | UI background disappears after scene change | Known Unity IMGUI issue; the mod auto-reinitializes styles on draw |
+| "go to the kitchen" does nothing | Press F9 → `[DBG]` → **List places**. An empty list means this NPC has no routine spot in this scene; add your own place to `locations.txt` |
+| The AI sends her to the wrong place | Place names are the game's own asset names. Check `locations_dump.txt` and add an explicit `name = x,y,z` line in `locations.txt` to pin that room |
+| She never goes to a chore you ask for (*"go sweep the hallway"*) | Chore spots come from *that* NPC's routine. Press F9 → `[DBG]` → **List places** to see the chores she knows in this scene; for anything missing, add your own place to `locations.txt` (`hallway = -0.49,0.00,-7.70,Broom`) |
 
 ---
 

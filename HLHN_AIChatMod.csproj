@@ -83,6 +83,12 @@
       <HintPath>$(ManagedDir)\UnityEngine.AnimationModule.dll</HintPath>
       <Private>false</Private>
     </Reference>
+
+    <!-- NavMesh: used to validate that a spot belongs to the current scene -->
+    <Reference Include="UnityEngine.AIModule">
+      <HintPath>$(ManagedDir)\UnityEngine.AIModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
     <Reference Include="UnityEngine.PhysicsModule">
       <HintPath>$(ManagedDir)\UnityEngine.PhysicsModule.dll</HintPath>
       <Private>false</Private>

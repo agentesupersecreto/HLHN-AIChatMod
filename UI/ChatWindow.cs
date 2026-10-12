@@ -514,6 +514,7 @@ namespace DialogInterceptorMod.UI
             // ── Command toggles ──────────────────────────────────
             GUILayout.Label("AI Commands:", ChatStyles.SectionStyle);
             DrawCmdToggle("Follow/Unfollow",  ref _behaviour.CmdFollowEnabled);
+            DrawCmdToggle("Go to a place",    ref _behaviour.CmdGoToEnabled);
             DrawCmdToggle("Clothes put/remove",ref _behaviour.CmdClothesEnabled);
             DrawCmdToggle("Kiss",              ref _behaviour.CmdKissEnabled);
             DrawCmdToggle("Trust mod",         ref _behaviour.CmdTrustModEnabled);
@@ -629,6 +630,10 @@ namespace DialogInterceptorMod.UI
                 DrawDebugRow("PauseWork",    nav.PauseWork.ToString());
                 if (nav.CurrentTask != null)
                     DrawDebugRow("Task", nav.CurrentTask.Desc ?? "(no desc)");
+
+                var spots = Game.LocationCatalog.Collect(nav);
+                DrawDebugRow("Places here",  spots.Count.ToString());
+                DrawDebugRow("GoTo order",   Game.NpcGoToHandler.HasActiveOrder ? Game.NpcGoToHandler.ActivePlaceName : "(none)");
             }
 
             GUILayout.Space(4);
@@ -690,6 +695,20 @@ namespace DialogInterceptorMod.UI
                 db.ResetMemory();
                 SetStatus("Memory cleared.", false);
             }
+            GUILayout.EndHorizontal();
+
+            GUILayout.BeginHorizontal();
+            if (GUILayout.Button("Dump locations", ChatStyles.ButtonStyle))
+            {
+                string path = db.CurrentNavigator != null
+                    ? Game.LocationCatalog.Dump(db.CurrentNavigator)
+                    : null;
+                SetStatus(path != null
+                    ? "Places written to BepInEx/config/AIChat/locations_dump.txt"
+                    : "Could not write locations_dump.txt (no NPC tracked).", path == null);
+            }
+            if (GUILayout.Button("List places", ChatStyles.ButtonStyle))
+                SetStatus(Game.NpcGoToHandler.ListPlaces(), false);
             GUILayout.EndHorizontal();
         }
 
@@ -782,6 +801,7 @@ namespace DialogInterceptorMod.UI
                     "",
                     "[Commands]",
                     $"Follow={_behaviour.CmdFollowEnabled}",
+                    $"GoTo={_behaviour.CmdGoToEnabled}",
                     $"Clothes={_behaviour.CmdClothesEnabled}",
                     $"Kiss={_behaviour.CmdKissEnabled}",
                     $"TrustMod={_behaviour.CmdTrustModEnabled}",
@@ -856,6 +876,8 @@ namespace DialogInterceptorMod.UI
                             break;
                         case "Follow":
                             if (bool.TryParse(val, out bool cf)) _behaviour.CmdFollowEnabled = cf; break;
+                        case "GoTo":
+                            if (bool.TryParse(val, out bool cg)) _behaviour.CmdGoToEnabled = cg; break;
                         case "Clothes":
                             if (bool.TryParse(val, out bool cc)) _behaviour.CmdClothesEnabled = cc; break;
                         case "Kiss":

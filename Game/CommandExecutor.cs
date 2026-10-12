@@ -8,6 +8,7 @@ namespace DialogInterceptorMod.Game
     /// Executes commands embedded in AI responses.
     /// Commands allow the AI to trigger native in-game actions:
     /// - Follow / stop following (NpcNavigatorAndRutines.MakeNpcFollowMe)
+    /// - Go to a place in the house (NpcGoToHandler -> the NPC's own routine system)
     /// - Clothes put/remove for all slots (NpcInteractionManager)
     /// - Kiss (Emotions.NpcKiss)
     /// - Emotions, Trust, facial expressions
@@ -38,7 +39,19 @@ namespace DialogInterceptorMod.Game
                     return ExecuteFollow(false);
                 }
 
-                // 2. Remove / Put on clothes
+                // 2. Go to a place ("go to the kitchen"): same trust rule as following.
+                if (cmd.StartsWith("goto:") || cmd.StartsWith("go_to:") || cmd.StartsWith("moveto:") || cmd.StartsWith("go:"))
+                {
+                    if (!db.CmdGoToEnabled) return "[CMD disabled: goto]";
+                    return ExecuteGoTo(cmd.Substring(cmd.IndexOf(':') + 1));
+                }
+                if (cmd == "places" || cmd == "goto_list")
+                {
+                    if (!db.CmdGoToEnabled) return "[CMD disabled: goto]";
+                    return NpcGoToHandler.ListPlaces();
+                }
+
+                // 3. Remove / Put on clothes
                 if (cmd.StartsWith("remove_cloth:") || cmd.StartsWith("remove:") || cmd.StartsWith("take_off:"))
                 {
                     if (!db.CmdClothesEnabled) return "[CMD disabled: clothes]";
@@ -52,35 +65,35 @@ namespace DialogInterceptorMod.Game
                     return ExecuteClothAction(slot, remove: false);
                 }
 
-                // 3. Kiss ("beso" is a Spanish alias, kept for models answering in another language)
+                // 4. Kiss ("beso" is a Spanish alias, kept for models answering in another language)
                 if (cmd == "kiss" || cmd == "beso")
                 {
                     if (!db.CmdKissEnabled) return "[CMD disabled: kiss]";
                     return ExecuteKiss();
                 }
 
-                // 4. Modify Trust
+                // 5. Modify Trust
                 if (cmd.StartsWith("modify_trust:"))
                 {
                     if (!db.CmdTrustModEnabled) return "[CMD disabled: modify_trust]";
                     return ExecuteModifyTrust(cmd.Substring(13));
                 }
 
-                // 5. Modify Emotion / Stats
+                // 6. Modify Emotion / Stats
                 if (cmd.StartsWith("modify_emotion:"))
                 {
                     if (!db.CmdEmotionModEnabled) return "[CMD disabled: modify_emotion]";
                     return ExecuteModifyEmotion(cmd.Substring(15));
                 }
 
-                // 6. Facial Expressions
+                // 7. Facial Expressions
                 if (cmd.StartsWith("make_face:"))
                 {
                     if (!db.CmdMakeFaceEnabled) return "[CMD disabled: make_face]";
                     return ExecuteMakeFace(cmd.Substring(10));
                 }
 
-                // 7. Force in-game speech
+                // 8. Force in-game speech
                 if (cmd.StartsWith("say:"))
                 {
                     if (!db.CmdSayEnabled) return "[CMD disabled: say]";
@@ -128,17 +141,42 @@ namespace DialogInterceptorMod.Game
         }
 
         /// <summary>
-        /// Trust gate for following. Mirrors the game's own check in
+        /// Sends the NPC to the place named after the colon. Optional third field: how many
+        /// in-game hours she stays ("goto:kitchen:2").
+        /// </summary>
+        private static string ExecuteGoTo(string args)
+        {
+            string place = args.Trim();
+            float? hours = null;
+
+            int separator = place.IndexOf(':');
+            if (separator > 0)
+            {
+                string hoursText = place.Substring(separator + 1).Trim();
+                if (float.TryParse(hoursText, System.Globalization.NumberStyles.Float,
+                                   System.Globalization.CultureInfo.InvariantCulture, out float parsed))
+                {
+                    hours = parsed;
+                    place = place.Substring(0, separator).Trim();
+                }
+            }
+
+            if (place.Length == 0) return NpcGoToHandler.ListPlaces();
+            return NpcGoToHandler.GoTo(place, hours);
+        }
+
+        /// <summary>
+        /// Trust gate for following and for the goto command. Mirrors the game's own check in
         /// NpcInteractionManager.NpcFollow(): ValueToFollow &lt;= Trust.
         /// Returns null when the action is allowed.
         /// </summary>
-        private static string CheckFollowThreshold()
+        internal static string CheckFollowThreshold(string action = "follow you")
         {
             var emotions = DialogBehaviour.Instance.CurrentEmotions;
             if (emotions == null) return null; // no stats to compare: keep the best-effort behavior
             if (emotions.Trust >= emotions.ValueToFollow) return null;
 
-            return $"{DialogBehaviour.Instance.CurrentCharName} refuses to follow you: " +
+            return $"{DialogBehaviour.Instance.CurrentCharName} refuses to {action}: " +
                    $"Trust {emotions.Trust:F0} < {emotions.ValueToFollow:F0} required.";
         }
 

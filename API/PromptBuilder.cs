@@ -203,6 +203,8 @@ namespace DialogInterceptorMod.API
             sb.AppendLine("- follow:stop — Stop following the player and stay here / resume chores.");
             sb.AppendLine("- remove_cloth:SLOT — Take off a piece of clothing (slots: dress, shirt, pants, skirt, bra, panty, socks, shoes, jacket, belt, glasses, gloves, hat, collar, all). Only if Trust >= ValueToUndress.");
             sb.AppendLine("- put_cloth:SLOT — Put on a piece of clothing (or 'all').");
+            sb.AppendLine("- goto:PLACE — Walk to a place of the house and stay there doing whatever is done there. PLACE is copied character for character from the places listed for this turn: rooms (kitchen, bathroom, bedroom, living room, outside...) and the house chores the routine knows (Do laundry, Washing Plates, Sweeping Kitchen, Clean bathroom, Watering Living Plant...). Only if Trust >= ValueToFollow. Optional stay: goto:Do laundry:2 (2 in-game hours).");
+            sb.AppendLine("- places — List every place you can go to in this house (use it when asked where you can go).");
             sb.AppendLine("- kiss — Kiss the player. Only if Trust >= ValueToKiss.");
             sb.AppendLine("- modify_trust:VALUE (e.g. modify_trust:+3 or modify_trust:-5) — Use when conversation naturally makes the character like or dislike the player more.");
             sb.AppendLine("- modify_emotion:STAT:VALUE (Stats: submission, perversion, desire, hornylevel. e.g. modify_emotion:desire:+10).");
