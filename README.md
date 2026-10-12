@@ -1,6 +1,6 @@
 # HLHN AI Chat Mod
 
-A BepInEx mod for **House of Love: Hot Neighbors** that integrates AI-powered dialogue into the game. Press **F9** to open the chat window and hold real conversations with NPCs (Laura, Susan, Stacy, Katherine) — AI responses play through the game's native dialogue system and can trigger in-game actions.
+A BepInEx mod for **He Lives Here Now** by EvilGuest, that integrates AI-powered dialogue into the game. Press **F9** to open the chat window and hold real conversations with NPCs (Laura, Susan, Stacy, Katherine) — AI responses play through the game's native dialogue system and can trigger in-game actions.
 
 ---
 
@@ -14,9 +14,8 @@ A BepInEx mod for **House of Love: Hot Neighbors** that integrates AI-powered di
   - Put/Remove any clothing item
   - Kiss, facial expressions
   - Trust & emotion modifications
-- 💬 **Multilingual Intent Detection** — Commands are detected in English and Spanish (and any language the AI understands).
+- 💬 **Multilingual Intent Detection** — Commands are detected in English and any language the AI understands.
 - 💾 **Persistent Memory** — Conversation history and per-character summaries are saved to disk.
-- 🪟 **Resizable UI** — Chat window anchors to the top-right corner, fully draggable, never leaves the screen.
 
 ---
 
@@ -24,9 +23,8 @@ A BepInEx mod for **House of Love: Hot Neighbors** that integrates AI-powered di
 
 | Requirement | Version |
 |---|---|
-| BepInEx | 5.x (Unity Mono) |
+| BepInEx | 5.x |
 | .NET Standard | 2.1 |
-| Unity | 2019+ |
 | Game | HLHN v6.4+ |
 
 ---
@@ -56,14 +54,15 @@ You can also configure directly in the **Settings panel** (press F9 → `[SET]` 
 | Provider | `Ollama` | AI backend: `Ollama`, `Gemini`, `Gemma` |
 | OllamaUrl | `http://localhost:11434/api/chat` | Ollama API endpoint |
 | OllamaModel | `gemma3:4b` | Ollama model name |
-| GemmaUrl | `http://localhost:1234/v1` | Gemma/LM Studio endpoint |
+| GemmaUrl | `http://localhost:11434/api/generate` | Gemma endpoint — must speak Ollama's `/api/generate` protocol (a bare host such as `http://localhost:11434` is completed automatically; LM Studio's OpenAI-style `/v1` is **not** supported by this client) |
+| GemmaModel | `gemma3:4b` | Gemma model name |
 | ApiKey | *(empty)* | Gemini API key |
 | MaxHistory | `30` | Messages kept in context |
 | AllowTrustMod | `true` | Allow AI to modify NPC trust |
 
 ### Custom System Prompt
 
-Place a file at `<game_folder>/BepInEx/plugins/AIchat/custom_prompt.txt` to inject additional instructions into every AI prompt.
+Place a file at `<game_folder>/BepInEx/config/AIchat/custom_prompt.txt` to inject additional instructions into every AI prompt.
 
 ---
 
@@ -108,8 +107,6 @@ The AI can embed special command tags in its responses to trigger game actions. 
 
 `dress`, `shirt`, `pants`, `skirt`, `bra`, `panty`, `socks`, `shoes`, `jacket`, `belt`, `glasses`, `gloves`, `hat`, `collar`, `all`
 
-> Spanish equivalents are also accepted: `vestido`, `camisa`, `falda`, `sosten`, `calzones`, etc.
-
 ### Face Types
 `happy`, `aroused`, `angry`, `annoyed`, `sad`, `neutral`
 
@@ -144,20 +141,7 @@ HLHN/
 ├── UI/                     # Chat window (Unity IMGUI)
 │   ├── ChatWindow.cs
 │   └── ChatStyles.cs
-└── Assembly-CSharp/        # Decompiled game source (reference only)
 ```
-
----
-
-## Building
-
-```bash
-dotnet build HLHN_AIChatMod.csproj -c Release
-```
-
-Output: `bin/Release/netstandard2.1/HLHN_AIChatMod.dll`
-
----
 
 ## Troubleshooting
 
@@ -167,7 +151,6 @@ Output: `bin/Release/netstandard2.1/HLHN_AIChatMod.dll`
 | No speech bubble appears | Approach the NPC closer so `SpeachListener` detects them |
 | AI returns empty responses | Check Ollama is running (`ollama serve`) or verify your Gemini API key |
 | UI background disappears after scene change | Known Unity IMGUI issue; the mod auto-reinitializes styles on draw |
-| Cursor stays visible after closing | Fixed in current version via `NotMove` + `Cursor.lockState` integration |
 
 ---
 

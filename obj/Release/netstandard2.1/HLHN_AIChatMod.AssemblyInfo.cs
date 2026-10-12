@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("HLHN_AIChatMod")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Release")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+49c8cb2712667abb684fb6b0c311dbe118cbafbd")]
 [assembly: System.Reflection.AssemblyProductAttribute("HLHN_AIChatMod")]
 [assembly: System.Reflection.AssemblyTitleAttribute("HLHN_AIChatMod")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

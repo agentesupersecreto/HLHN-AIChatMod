@@ -21,6 +21,9 @@ namespace DialogInterceptorMod.Core
         /// <summary>Window in seconds for dedup of identical messages.</summary>
         public float DedupWindowSeconds { get; set; } = 10f;
 
+        /// <summary>Upper bound for the batched queue, so sustained chatter can't grow it forever.</summary>
+        private const int MaxPendingBatch = 8;
+
         private float _lastSystemMessageTime;
         private readonly Queue<TimedMessage> _recentMessages = new Queue<TimedMessage>();
         private readonly List<string> _pendingBatch = new List<string>();
@@ -51,7 +54,8 @@ namespace DialogInterceptorMod.Core
             // Check cooldown
             if (now - _lastSystemMessageTime < CooldownSeconds)
             {
-                // Batch it instead of dropping
+                // Batch it instead of dropping (bounded: the oldest entry is discarded when full)
+                if (_pendingBatch.Count >= MaxPendingBatch) _pendingBatch.RemoveAt(0);
                 _pendingBatch.Add(message);
                 if (_batchStartTime == 0f) _batchStartTime = now;
                 return false;
@@ -81,7 +85,8 @@ namespace DialogInterceptorMod.Core
             }
             else
             {
-                combined = $"⚡ ({_pendingBatch.Count} events) {string.Join(" | ", _pendingBatch)}";
+                // ASCII only: Unity's default IMGUI font cannot render emoji.
+                combined = $"[EVT] ({_pendingBatch.Count} events) {string.Join(" | ", _pendingBatch)}";
             }
 
             _pendingBatch.Clear();

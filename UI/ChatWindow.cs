@@ -51,7 +51,8 @@ namespace DialogInterceptorMod.UI
         private string _editOllamaUrl;
         private string _editOllamaModel;
         private string _editApiKey;
-        private int _editProvider;
+        // Enum-typed (not a 0/1/2 index) so reordering ProviderType cannot silently break the UI.
+        private ProviderType _editProvider;
         private string _editGemmaUrl;
         private string _editGemmaModel;
 
@@ -72,7 +73,7 @@ namespace DialogInterceptorMod.UI
             _editGemmaUrl    = _behaviour.GemmaUrl;
             _editGemmaModel  = _behaviour.GemmaModel;
             _editApiKey      = _behaviour.ApiKey;
-            _editProvider    = (int)_behaviour.Provider;
+            _editProvider    = _behaviour.Provider;
             _editHotkeyDisplay = _behaviour.ChatHotkey.ToString();
 
             LoadConfig();
@@ -423,25 +424,25 @@ namespace DialogInterceptorMod.UI
             // Provider
             GUILayout.Label("AI Provider:", ChatStyles.LabelStyle);
             GUILayout.BeginHorizontal();
-            if (GUILayout.Button("Ollama", _editProvider == 1 ? ChatStyles.ActiveButtonStyle : ChatStyles.ButtonStyle)) _editProvider = 1;
-            if (GUILayout.Button("Gemini", _editProvider == 0 ? ChatStyles.ActiveButtonStyle : ChatStyles.ButtonStyle)) _editProvider = 0;
-            if (GUILayout.Button("Gemma",  _editProvider == 2 ? ChatStyles.ActiveButtonStyle : ChatStyles.ButtonStyle)) _editProvider = 2;
+            if (GUILayout.Button("Ollama", _editProvider == ProviderType.Ollama ? ChatStyles.ActiveButtonStyle : ChatStyles.ButtonStyle)) _editProvider = ProviderType.Ollama;
+            if (GUILayout.Button("Gemini", _editProvider == ProviderType.Gemini ? ChatStyles.ActiveButtonStyle : ChatStyles.ButtonStyle)) _editProvider = ProviderType.Gemini;
+            if (GUILayout.Button("Gemma",  _editProvider == ProviderType.Gemma  ? ChatStyles.ActiveButtonStyle : ChatStyles.ButtonStyle)) _editProvider = ProviderType.Gemma;
             GUILayout.EndHorizontal();
             GUILayout.Space(4);
 
-            if (_editProvider == 1)
+            if (_editProvider == ProviderType.Ollama)
             {
                 GUILayout.Label("Ollama URL:",   ChatStyles.LabelStyle);
                 _editOllamaUrl   = GUILayout.TextField(_editOllamaUrl,   ChatStyles.InputStyle);
                 GUILayout.Label("Ollama Model:", ChatStyles.LabelStyle);
                 _editOllamaModel = GUILayout.TextField(_editOllamaModel, ChatStyles.InputStyle);
             }
-            else if (_editProvider == 0)
+            else if (_editProvider == ProviderType.Gemini)
             {
                 GUILayout.Label("Gemini API Key:", ChatStyles.LabelStyle);
                 _editApiKey = GUILayout.TextField(_editApiKey, ChatStyles.InputStyle);
             }
-            else if (_editProvider == 2)
+            else if (_editProvider == ProviderType.Gemma)
             {
                 GUILayout.Label("Gemma URL:",   ChatStyles.LabelStyle);
                 _editGemmaUrl   = GUILayout.TextField(_editGemmaUrl,   ChatStyles.InputStyle);
@@ -500,7 +501,7 @@ namespace DialogInterceptorMod.UI
             GUILayout.Space(8);
             if (GUILayout.Button("Apply & Save", ChatStyles.ActiveButtonStyle))
             {
-                _behaviour.Provider    = (ProviderType)_editProvider;
+                _behaviour.Provider    = _editProvider;
                 _behaviour.OllamaUrl   = _editOllamaUrl;
                 _behaviour.OllamaModel = _editOllamaModel;
                 _behaviour.GemmaUrl    = _editGemmaUrl;
@@ -808,7 +809,19 @@ namespace DialogInterceptorMod.UI
                             break;
                         case "OllamaUrl":    _behaviour.OllamaUrl   = val; break;
                         case "OllamaModel":  _behaviour.OllamaModel = val; break;
-                        case "GemmaUrl":     _behaviour.GemmaUrl    = val; break;
+                        case "GemmaUrl":
+                            // Legacy default pointed at LM Studio's OpenAI-style endpoint, which
+                            // GemmaClient (Ollama /api/generate protocol) cannot talk to.
+                            if (val == "http://localhost:1234/v1")
+                            {
+                                _behaviour.GemmaUrl = "http://localhost:11434/api/generate";
+                                Plugin.LogInfo("GemmaUrl: migrated legacy LM Studio default to http://localhost:11434/api/generate (Ollama /api/generate).");
+                            }
+                            else
+                            {
+                                _behaviour.GemmaUrl = val;
+                            }
+                            break;
                         case "GemmaModel":   _behaviour.GemmaModel  = val; break;
                         case "ApiKey":       _behaviour.ApiKey      = val; break;
                         case "Hotkey":
@@ -849,7 +862,7 @@ namespace DialogInterceptorMod.UI
                 _editGemmaUrl    = _behaviour.GemmaUrl;
                 _editGemmaModel  = _behaviour.GemmaModel;
                 _editApiKey      = _behaviour.ApiKey;
-                _editProvider    = (int)_behaviour.Provider;
+                _editProvider    = _behaviour.Provider;
 
                 Plugin.LogInfo($"Config loaded from: {path}");
             }

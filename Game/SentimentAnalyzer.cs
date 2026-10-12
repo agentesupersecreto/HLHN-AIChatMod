@@ -105,7 +105,8 @@ namespace DialogInterceptorMod.Game
             // Apply the trust change
             emotions.AddTrust(trustChange);
 
-            string direction = trustChange > 0 ? "📈" : "📉";
+            // ASCII only: Unity's default IMGUI font cannot render emoji.
+            string direction = trustChange > 0 ? "[+]" : "[-]";
             return $"{direction} {DialogBehaviour.Instance.CurrentCharName} feels {mood} (Trust {trustChange:+0;-0;0})";
         }
 
@@ -153,7 +154,8 @@ namespace DialogInterceptorMod.Game
             if (trustChange != 0f)
             {
                 emotions.AddTrust(trustChange);
-                string direction = trustChange > 0 ? "📈" : "📉";
+                // ASCII only: Unity's default IMGUI font cannot render emoji.
+                string direction = trustChange > 0 ? "[+]" : "[-]";
                 return $"{direction} {DialogBehaviour.Instance.CurrentCharName} reacts ({lower}) Trust {trustChange:+0;-0;0}";
             }
 

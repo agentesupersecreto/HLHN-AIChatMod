@@ -38,7 +38,7 @@ namespace DialogInterceptorMod.API
 
         public IEnumerator SendMessage(string mensajeUsuario)
         {
-            string url = _behaviour.GemmaUrl;
+            string url = NormalizeGemmaUrl(_behaviour.GemmaUrl);
             string model = _behaviour.GemmaModel;
 
             string systemPrompt = PromptBuilder.GenerateSystemPrompt(mensajeUsuario);
@@ -89,6 +89,36 @@ namespace DialogInterceptorMod.API
 
             AIResponseProcessor.ProcessResponse(textoIA, _behaviour, "Gemma");
             _behaviour.Window.AwaitingResponse = false;
+        }
+
+        /// <summary>
+        /// This client speaks Ollama's /api/generate protocol (raw `prompt` + `options`, reply in
+        /// the `response` field), so the configured endpoint must be an Ollama one. A bare host
+        /// (http://localhost:11434) or an /api prefix is completed automatically; an OpenAI-style
+        /// /v1 endpoint cannot work with this protocol and is reported as such.
+        /// </summary>
+        private static string NormalizeGemmaUrl(string url)
+        {
+            if (string.IsNullOrWhiteSpace(url))
+                return "http://localhost:11434/api/generate";
+
+            url = url.Trim().TrimEnd('/');
+
+            if (url.EndsWith("/v1", StringComparison.OrdinalIgnoreCase) || url.Contains("/v1/"))
+            {
+                Plugin.LogWarning($"GemmaUrl '{url}' looks like an OpenAI-style endpoint, but GemmaClient uses Ollama's /api/generate protocol. Use e.g. http://localhost:11434/api/generate.");
+            }
+
+            if (url.EndsWith("/api", StringComparison.OrdinalIgnoreCase))
+                return url + "/generate";
+
+            // No path at all (e.g. http://192.168.1.10:11434) — assume the Ollama default path.
+            int schemeIdx = url.IndexOf("://", StringComparison.Ordinal);
+            string hostAndPath = schemeIdx >= 0 ? url.Substring(schemeIdx + 3) : url;
+            if (!hostAndPath.Contains("/"))
+                return url + "/api/generate";
+
+            return url;
         }
 
         /// <summary>

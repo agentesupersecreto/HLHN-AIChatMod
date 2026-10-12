@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using DialogInterceptorMod.Models;
@@ -33,7 +34,7 @@ namespace DialogInterceptorMod.Core
         public ProviderType Provider = ProviderType.Ollama;
         public string OllamaUrl = "http://localhost:11434/api/chat";
         public string OllamaModel = "gemma3:4b";
-        public string GemmaUrl = "http://localhost:1234/v1";
+        public string GemmaUrl = "http://localhost:11434/api/generate";
         public string GemmaModel = "gemma3:4b";
         public KeyCode ChatHotkey { get; set; } = KeyCode.F9;
 
@@ -67,6 +68,21 @@ namespace DialogInterceptorMod.Core
         private string _lastCharName = "";
         private float _noNpcTimer = 0f;
         private const float NO_NPC_GRACE_SECONDS = 2f;
+
+        // Speach.Say() drops the line while the NPC is still speaking, so the AI reply is
+        // retried until the bubble is free (or these limits are reached).
+        private const float AI_SPEECH_RETRY_INTERVAL = 0.3f;
+        private const float AI_SPEECH_MAX_WAIT_SECONDS = 15f;
+        private Coroutine _aiSpeechRoutine;
+
+        // SpeachListener is cached because it lives in the scene: on a scene change it is
+        // destroyed (the Unity fake-null makes the cache invalidate itself) and then found again.
+        private SpeachListener _speachListener;
+        private float _nextListenerSearchTime;
+        private float _nextNotMoveSearchTime;
+
+        /// <summary>Back-off applied to repeated failed scene lookups (both are called from Update()).</summary>
+        private const float SCENE_LOOKUP_RETRY_INTERVAL = 1f;
 
         public static void Initialize()
         {
@@ -139,14 +155,23 @@ namespace DialogInterceptorMod.Core
 
         public void RefreshNotMove()
         {
+            if (_notMove != null) return;
+
+            // Same reasoning as GetSpeachListener(): NotMove is absent in some scenes and
+            // Update() would otherwise run a full-scene search every single frame.
+            if (Time.time < _nextNotMoveSearchTime) return;
+
+            _notMove = FindFirstObjectByType<NotMove>();
             if (_notMove == null)
             {
-                _notMove = FindFirstObjectByType<NotMove>();
-                if (_notMove != null && _chatMenuDummy != null)
-                {
-                    _notMove.AddMenu(_chatMenuDummy);
-                    Plugin.LogInfo("Registered AIChat dummy menu with NotMove");
-                }
+                _nextNotMoveSearchTime = Time.time + SCENE_LOOKUP_RETRY_INTERVAL;
+                return;
+            }
+
+            if (_chatMenuDummy != null)
+            {
+                _notMove.AddMenu(_chatMenuDummy);
+                Plugin.LogInfo("Registered AIChat dummy menu with NotMove");
             }
         }
 
@@ -225,13 +250,45 @@ namespace DialogInterceptorMod.Core
         }
 
         /// <summary>
+        /// Adds a captured game event (NPC in-game speech, player interactions, command
+        /// feedback) to the chat history through the spam filter, so in-game chatter obeys
+        /// the same cooldown/dedup rules as the mod's own system messages.
+        /// </summary>
+        public void AddCapturedEvent(string message)
+        {
+            if (string.IsNullOrWhiteSpace(message)) return;
+            if (!SpamFilter.ShouldShow(message)) return;
+
+            ChatHistory.Add(ChatMessage.SystemMessage(message));
+            if (Window != null)
+                Window.ScrollToBottom();
+        }
+
+        /// <summary>
         /// Finds the NPC the player is looking at via SpeachListener and caches references.
         /// </summary>
+        /// <summary>
+        /// Returns the scene's SpeachListener, searching only when the cached one is gone.
+        /// Repeated failed lookups are throttled so a scene without a listener doesn't pay
+        /// for a full-scene FindFirstObjectByType() every single frame.
+        /// </summary>
+        private SpeachListener GetSpeachListener()
+        {
+            if (_speachListener != null) return _speachListener;
+            if (Time.time < _nextListenerSearchTime) return null;
+
+            _speachListener = FindFirstObjectByType<SpeachListener>();
+            // Found: allow an immediate re-search if it gets destroyed (scene change).
+            // Not found: back off, so the timer only throttles consecutive misses.
+            _nextListenerSearchTime = _speachListener != null ? 0f : Time.time + SCENE_LOOKUP_RETRY_INTERVAL;
+            return _speachListener;
+        }
+
         private void RefreshCurrentNpc()
         {
             try
             {
-                var listener = FindFirstObjectByType<SpeachListener>();
+                var listener = GetSpeachListener();
                 if (listener == null || listener.NpcHit == null)
                 {
                     // Start grace period before clearing the active NPC
@@ -297,22 +354,74 @@ namespace DialogInterceptorMod.Core
 
         /// <summary>
         /// Makes the current NPC say the AI's response via the game's native dialogue system.
+        /// Speach.Say() silently drops the text while the NPC is already speaking, so that
+        /// case is retried instead of losing the response.
         /// </summary>
         public void ShowAIResponseInGame(string text)
         {
+            if (string.IsNullOrEmpty(text)) return;
+
             if (CurrentSpeach != null)
             {
-                CurrentSpeach.Say(text);
-            }
-            else
-            {
-                // Fallback: try ShowDialogue directly
-                var showDialogue = FindFirstObjectByType<ShowDialogue>();
-                if (showDialogue != null)
+                if (_aiSpeechRoutine != null)
                 {
-                    showDialogue.ShowSimpleWithName(text, CurrentCharName);
+                    // A newer response supersedes the one still waiting for the bubble.
+                    StopCoroutine(_aiSpeechRoutine);
+                    _aiSpeechRoutine = null;
+                    Plugin.LogDebug("Pending AI speech cancelled — superseded by a newer response.");
                 }
+
+                _aiSpeechRoutine = StartCoroutine(SayWhenIdle(CurrentSpeach, text));
+                return;
             }
+
+            // Fallback: no NPC bound — try ShowDialogue directly
+            var showDialogue = FindFirstObjectByType<ShowDialogue>();
+            if (showDialogue != null)
+            {
+                showDialogue.ShowSimpleWithName(text, CurrentCharName);
+            }
+        }
+
+        /// <summary>
+        /// Calls Speach.Say() until the component accepts the line. Say() only starts its
+        /// routine while it is not speaking and reports nothing when it drops the text, so
+        /// acceptance is detected through Speach.Dialogue: SayRutine() assigns it synchronously,
+        /// before its first yield, which means the assignment is already visible right after Say().
+        /// </summary>
+        private IEnumerator SayWhenIdle(Speach speach, string text)
+        {
+            float deadline = Time.time + AI_SPEECH_MAX_WAIT_SECONDS;
+            int attempts = 0;
+
+            while (speach != null && Time.time < deadline)
+            {
+                // Guard the echo-loop check inside the Speach.Say Harmony patch.
+                if (Window != null) Window.IsAIResponse = true;
+                speach.Say(text);
+                if (Window != null) Window.IsAIResponse = false;
+
+                attempts++;
+
+                if (speach == null || speach.Dialogue == text)
+                    break;
+
+                // NPC is mid-line: wait for the bubble to free up and try again.
+                yield return new WaitForSeconds(AI_SPEECH_RETRY_INTERVAL);
+            }
+
+            _aiSpeechRoutine = null;
+
+            if (speach != null && speach.Dialogue == text)
+            {
+                if (attempts > 1)
+                    Plugin.LogDebug($"AI speech shown after {attempts} attempts (NPC was busy).");
+                yield break;
+            }
+
+            Plugin.LogWarning($"NPC was busy — AI response not shown in the speech bubble after {attempts} attempt(s): {text}");
+            if (Window != null)
+                Window.SetStatus("[WARN] NPC was busy — reply kept in the chat window only.", true);
         }
 
         /// <summary>

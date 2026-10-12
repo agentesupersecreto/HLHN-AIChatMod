@@ -2,7 +2,6 @@ using System;
 using HarmonyLib;
 using UnityEngine;
 using DialogInterceptorMod.Core;
-using DialogInterceptorMod.Models;
 
 namespace DialogInterceptorMod.Patching
 {
@@ -44,10 +43,9 @@ namespace DialogInterceptorMod.Patching
                     // If this is the NPC we're currently chatting with, add to context
                     if (npcName == DialogBehaviour.Instance.CurrentCharName)
                     {
-                        // Add as system message to provide context about NPC's game dialogue
-                        DialogBehaviour.Instance.ChatHistory.Add(
-                            ChatMessage.SystemMessage($"[{npcName} says in-game]: {text}")
-                        );
+                        // Add as system message to provide context about NPC's game dialogue.
+                        // Routed through the spam filter so repeated chatter can't flood the window.
+                        DialogBehaviour.Instance.AddCapturedEvent($"[{npcName} says in-game]: {text}");
                     }
                 }
                 catch (Exception ex)
@@ -75,9 +73,7 @@ namespace DialogInterceptorMod.Patching
 
                     if (npcName == DialogBehaviour.Instance.CurrentCharName)
                     {
-                        DialogBehaviour.Instance.ChatHistory.Add(
-                            ChatMessage.SystemMessage($"⚡ Player discussed '{topic}' with {npcName}")
-                        );
+                        DialogBehaviour.Instance.AddCapturedEvent($"[EVT] Player discussed '{topic}' with {npcName}");
                     }
                 }
                 catch (Exception ex)
@@ -105,9 +101,7 @@ namespace DialogInterceptorMod.Patching
 
                     if (npcName == DialogBehaviour.Instance.CurrentCharName)
                     {
-                        DialogBehaviour.Instance.ChatHistory.Add(
-                            ChatMessage.SystemMessage($"⚡ Player complimented {npcName}: '{topic}'")
-                        );
+                        DialogBehaviour.Instance.AddCapturedEvent($"[EVT] Player complimented {npcName}: '{topic}'");
                     }
                 }
                 catch (Exception ex)
@@ -135,9 +129,7 @@ namespace DialogInterceptorMod.Patching
 
                     if (npcName == DialogBehaviour.Instance.CurrentCharName)
                     {
-                        DialogBehaviour.Instance.ChatHistory.Add(
-                            ChatMessage.SystemMessage($"⚡ Player criticized {npcName}: '{topic}'")
-                        );
+                        DialogBehaviour.Instance.AddCapturedEvent($"[EVT] Player criticized {npcName}: '{topic}'");
                     }
                 }
                 catch (Exception ex)
@@ -163,9 +155,7 @@ namespace DialogInterceptorMod.Patching
                     string npcName = __instance.transform.name;
                     if (npcName == DialogBehaviour.Instance.CurrentCharName)
                     {
-                        DialogBehaviour.Instance.ChatHistory.Add(
-                            ChatMessage.SystemMessage($"⚡ Player kissed {npcName}")
-                        );
+                        DialogBehaviour.Instance.AddCapturedEvent($"[EVT] Player kissed {npcName}");
                     }
                 }
                 catch (Exception ex)

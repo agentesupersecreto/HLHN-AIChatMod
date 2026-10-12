@@ -95,13 +95,13 @@ namespace DialogInterceptorMod.API
                     {
                         string sentimentFeedback = SentimentAnalyzer.ApplySentimentFromStyle(estiloDetectado);
                         if (!string.IsNullOrEmpty(sentimentFeedback))
-                            AddSystemMessage(behaviour, $"⚡ {sentimentFeedback}");
+                            behaviour.AddCapturedEvent(sentimentFeedback);
                     }
                     else
                     {
                         string sentimentFeedback = SentimentAnalyzer.ApplySentiment(dialogo);
                         if (!string.IsNullOrEmpty(sentimentFeedback))
-                            AddSystemMessage(behaviour, $"⚡ {sentimentFeedback}");
+                            behaviour.AddCapturedEvent(sentimentFeedback);
                     }
                 }
                 else
@@ -117,7 +117,7 @@ namespace DialogInterceptorMod.API
                         behaviour.Window.SetStatus, 
                         behaviour.Window.ShowEmotionFeedback
                     );
-                    AddSystemMessage(behaviour, $"⚡ {feedback}");
+                    behaviour.AddCapturedEvent($"[CMD] {feedback}");
                 }
 
                 if (comandosEncontrados.Count > 0)
@@ -142,27 +142,16 @@ namespace DialogInterceptorMod.API
         {
             try
             {
-                // Flag to prevent Harmony patch from re-capturing this as context
-                behaviour.Window.IsAIResponse = true;
-
-                // Route through the NPC's Speach component
+                // Route through the NPC's Speach component. The IsAIResponse echo guard is
+                // toggled around the actual Say() call inside DialogBehaviour.SayWhenIdle(),
+                // so it also covers retries and the [CMD: say] path.
                 behaviour.ShowAIResponseInGame(texto);
-
-                behaviour.Window.IsAIResponse = false;
             }
             catch (Exception ex)
             {
-                behaviour.Window.IsAIResponse = false;
                 Plugin.LogDebug($"ShowInGameDialogue error: {ex.Message}");
             }
         }
 
-        private static void AddSystemMessage(DialogBehaviour behaviour, string message)
-        {
-            if (behaviour.SpamFilter.ShouldShow(message))
-            {
-                behaviour.ChatHistory.Add(ChatMessage.SystemMessage(message));
-            }
-        }
     }
 }

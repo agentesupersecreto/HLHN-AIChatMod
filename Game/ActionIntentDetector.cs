@@ -189,13 +189,13 @@ namespace DialogInterceptorMod.Game
                 return null;
 
             // Check slots
-            if (text.Contains("vestido") || text.Contains("dress"))
+            if (text.Contains("vestido") || ContainsWord(text, "dress") || ContainsWord(text, "dresses")) // "undress" is not "dress"
                 return "dress";
             if (text.Contains("panti") || text.Contains("panties") || text.Contains("panty") || text.Contains("calzon") || text.Contains("calzones") || text.Contains("bragas") || text.Contains("tanga") || text.Contains("underwear"))
                 return "panty";
-            if (text.Contains("bra") || text.Contains("sosten") || text.Contains("sujetador") || text.Contains("brasier"))
+            if (ContainsWord(text, "bra") || ContainsWord(text, "bras") || text.Contains("sosten") || text.Contains("sujetador") || text.Contains("brasier"))
                 return "bra";
-            if (text.Contains("camisa") || text.Contains("shirt") || text.Contains("blusa") || text.Contains("remera") || text.Contains("top"))
+            if (text.Contains("camisa") || text.Contains("shirt") || text.Contains("blusa") || text.Contains("remera") || ContainsWord(text, "top") || ContainsWord(text, "tops"))
                 return "shirt";
             if (text.Contains("pantalon") || text.Contains("pantalones") || text.Contains("pants") || text.Contains("jeans"))
                 return "pants";
@@ -213,14 +213,32 @@ namespace DialogInterceptorMod.Game
                 return "glasses";
             if (text.Contains("guantes") || text.Contains("gloves"))
                 return "gloves";
-            if (text.Contains("sombrero") || text.Contains("gorro") || text.Contains("hat"))
+            if (text.Contains("sombrero") || text.Contains("gorro") || ContainsWord(text, "hat") || ContainsWord(text, "hats"))
                 return "hat";
             if (text.Contains("collar"))
                 return "collar";
-            if (text.Contains("toda la ropa") || text.Contains("todo") || text.Contains("all") || text.Contains("everything") || text.Contains("completamente") || text.Contains("desnuda") || text.Contains("naked"))
+            // Whole-word checks: "all" must not match "call"/"small", and "undress"/"strip"
+            // mean everything rather than the dress slot. "todos los"/"todas las" are matched
+            // as phrases so "todo" doesn't fire on "hola a todos" (everyone).
+            if (ContainsWord(text, "all") || ContainsWord(text, "everything") ||
+                ContainsWord(text, "todo") || ContainsWord(text, "toda") ||
+                ContainsWord(text, "todos los") || ContainsWord(text, "todas las") ||
+                ContainsWord(text, "completamente") || ContainsWord(text, "desnuda") ||
+                ContainsWord(text, "naked") || ContainsWord(text, "undress") || ContainsWord(text, "strip"))
                 return "all";
 
             return null;
+        }
+
+        /// <summary>
+        /// Whole-word containment check. NormalizeText() lowercases the message and turns
+        /// punctuation into spaces, so padding both sides makes a short token match only as
+        /// its own word: "all" no longer matches "call"/"small", "hat" not "that",
+        /// "dress" not "undress". Phrases ("todos los") work the same way.
+        /// </summary>
+        private static bool ContainsWord(string text, string word)
+        {
+            return (" " + text + " ").Contains(" " + word + " ");
         }
 
         private static string NormalizeText(string text)

@@ -83,6 +83,11 @@ The mod registers a dummy `GameObject` (`AIChat_MenuDummy`) with `NotMove.AddMen
 ## UI Notes (Unity IMGUI)
 
 - **No emoji/Unicode** — Unity's default IMGUI font doesn't render them. Use ASCII (e.g. `[AI]`, `[X]`, `[SET]`).
+  Legacy IMGUI text is BMP-only, so emoji outside the BMP (e.g. `📈` U+1F4C8) can never be drawn even with a custom dynamic font.
+  System-message prefixes currently in use: `[EVT]` (game events), `[CMD]` (command feedback), `[+]` / `[-]` (trust up/down).
+- **Never append to `ChatHistory` directly from Harmony patches** — route captured in-game events through
+  `DialogBehaviour.AddCapturedEvent()` so the `SpamFilter` cooldown/dedup applies. Only the mod's own AI reply
+  (`new ChatMessage(false, dialogo)`) bypasses the filter.
 - **Texture persistence** — All `Texture2D` created in `ChatStyles` must have `hideFlags = HideFlags.HideAndDontSave`.
 - **Style reinitialization** — `ChatStyles.NeedsReinitialize()` is checked on every `Draw()` call to recover from scene changes that destroy texture references.
 - **Window anchoring** — `ChatWindow.EnsureWindowPosition()` clamps the window to the top-right corner and prevents it from going off-screen.

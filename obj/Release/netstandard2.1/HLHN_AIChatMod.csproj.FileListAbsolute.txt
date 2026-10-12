@@ -8,3 +8,4 @@ e:\dev\HLHN\obj\Release\netstandard2.1\HLHN_AIChatMod.AssemblyInfo.cs
 e:\dev\HLHN\obj\Release\netstandard2.1\HLHN_AIChatMod.csproj.CoreCompileInputs.cache
 e:\dev\HLHN\obj\Release\netstandard2.1\HLHN_AIChatMod.dll
 e:\dev\HLHN\obj\Release\netstandard2.1\HLHN_AIChatMod.pdb
+E:\dev\HLHN\obj\Release\netstandard2.1\HLHN_AIChatMod.sourcelink.json

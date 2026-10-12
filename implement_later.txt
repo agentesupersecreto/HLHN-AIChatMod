@@ -1,19 +1,3 @@
-Media — Emoji en IMGUI, viola  AGENTS.md . Hay 8 usos que se renderizan en la ventana y el default font de IMGUI no los soporta ( 📈 / 📉  son fuera del BMP → cuadros):
--  SentimentAnalyzer.cs:108,156  ( 📈 / 📉 )
--  HarmonyPatches.cs:79,109,139,167  y  AIResponseProcessor.cs:98,104,120  y  SpamFilter.cs:84  ( ⚡ )
-
-Media —  SpamFilter  se salta por los parches Harmony.  AIResponseProcessor  filtra vía  AddSystemMessage → SpamFilter , pero  Speach_Say_Patch  (y Talk/Cumpliment/Critic) hacen  ChatHistory.Add(...)  directo: el chatter del juego satura la ventana sin cooldown ni dedup.
-
-Media —  Speach.Say  descarta respuestas si la NPC ya habla.  Say()  sólo hace  if (!this.speaking) . Si la NPC está en medio de una línea, la respuesta de la IA no se muestra en el bocadillo y el mod no lo detecta ni reintenta (sólo el fallback cuando  CurrentSpeach == null ).
-
-Baja —  ConversationMemory.Load()  tiene código muerto. El primer bucle hace  int.TryParse(...)  y descarta el resultado (el  EXCHANGES  se parsea en un segundo bucle). Además,  KeyFacts / Tags  se añadirían duplicados si  Load()  corriera dos veces.
-
-Baja —  GemmaClient  con el default de URL incorrecto. El default  GemmaUrl = "http://localhost:1234/v1"  (LM Studio, formato OpenAI) pero  GemmaClient  hace POST con cuerpo estilo Ollama ( /api/generate  +  prompt / options ). Con ese default no funciona; debería ser  http://localhost:11434/api/generate  o adaptar el cliente.
-
-Baja — rendimiento.  RefreshCurrentNpc()  llama  FindFirstObjectByType<SpeachListener>()  cada frame (búsqueda de escena completa); cacheable.
-
-Baja —  ActionIntentDetector :  text.Contains("all")  como último caso coincide con substrings ("call", "small"); y  ProviderType { Gemini, Ollama, Gemma }  con UI que hardcodea 0/1/2 es frágil (reordenar el enum rompe el  Provider=  guardado).
-
 - SpamFilter  se salta por los parches Harmony.  AIResponseProcessor  filtra vía  AddSystemMessage → SpamFilter , pero  Speach_Say_Patch  (y Talk/Cumpliment/Critic) hacen  ChatHistory.Add(...)  directo: el chatter del juego satura la ventana sin cooldown ni dedup.
 
 -  CommandExecutor.ExecuteFollow  llama directo a  navigator.MakeNpcFollowMe() , saltándose el chequeo de trust.
@@ -23,3 +7,6 @@ Baja —  ActionIntentDetector :  text.Contains("all")  como último caso coinci
 - Config: README dice  .../LocalLow/<GameName>/AIchat/config.txt ; el real es  BepInEx/config/HLHN_AIChatMod.ini  ( ChatWindow.GetIniPath ).
 - Prompt custom: README dice  BepInEx/plugins/AIchat/custom_prompt.txt ; el código resuelve  BepInEx/AIchat/custom_prompt.txt  ( GetDirectoryName(ConfigPath) ).
 -  README  "Unity 2019+" vs  AGENTS.md  "Unity 6+"; título  v0.1  vs  PluginInfo 1.0.0 ; falta el comando  say  en la tabla; el modelo de Gemini ( gemini-flash-lite-latest ) está hardcodeado y no documentado.
+
+- al mantener el click pulsado en el resize la UI no hace nada
+- Si el personaje tiene el valor necesario para quitarse alguna prenda de ropa, es decir undress, si se le dice a la IA algo como "remove your skirt" la IA se niega cuando en realidad el personaje si tenia el valor necesario.

@@ -53,24 +53,27 @@ namespace DialogInterceptorMod.Core
             try
             {
                 var lines = File.ReadAllLines(_savePath);
-                foreach (var line in lines)
-                {
-                    if (line.StartsWith("EXCHANGES="))
-                        int.TryParse(line.Substring(10), out int count);
-                    else if (line.StartsWith("FACT="))
-                        KeyFacts.Add(line.Substring(5));
-                    else if (line.StartsWith("TAG="))
-                        Tags.Add(line.Substring(4));
-                }
 
-                // Parse exchanges properly
+                // Reset first so Load() is idempotent (it must not duplicate facts/tags
+                // when called more than once on the same instance).
+                TotalExchangeCount = 0;
+                KeyFacts.Clear();
+                Tags.Clear();
+
                 foreach (var line in lines)
                 {
                     if (line.StartsWith("EXCHANGES="))
                     {
                         if (int.TryParse(line.Substring(10), out int count))
                             TotalExchangeCount = count;
-                        break;
+                    }
+                    else if (line.StartsWith("FACT="))
+                    {
+                        KeyFacts.Add(line.Substring(5));
+                    }
+                    else if (line.StartsWith("TAG="))
+                    {
+                        Tags.Add(line.Substring(4));
                     }
                 }
             }
