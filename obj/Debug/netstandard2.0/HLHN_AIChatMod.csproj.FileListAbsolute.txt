@@ -1,0 +1,5 @@
+e:\dev\HLHN\obj\Debug\netstandard2.0\HLHN_AIChatMod.csproj.AssemblyReference.cache
+e:\dev\HLHN\obj\Debug\netstandard2.0\HLHN_AIChatMod.GeneratedMSBuildEditorConfig.editorconfig
+e:\dev\HLHN\obj\Debug\netstandard2.0\HLHN_AIChatMod.AssemblyInfoInputs.cache
+e:\dev\HLHN\obj\Debug\netstandard2.0\HLHN_AIChatMod.AssemblyInfo.cs
+e:\dev\HLHN\obj\Debug\netstandard2.0\HLHN_AIChatMod.csproj.CoreCompileInputs.cache

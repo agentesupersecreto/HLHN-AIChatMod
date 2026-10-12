@@ -1,0 +1,10 @@
+e:\dev\HLHN\bin\Release\netstandard2.1\HLHN_AIChatMod.deps.json
+e:\dev\HLHN\bin\Release\netstandard2.1\HLHN_AIChatMod.dll
+e:\dev\HLHN\bin\Release\netstandard2.1\HLHN_AIChatMod.pdb
+e:\dev\HLHN\obj\Release\netstandard2.1\HLHN_AIChatMod.csproj.AssemblyReference.cache
+e:\dev\HLHN\obj\Release\netstandard2.1\HLHN_AIChatMod.GeneratedMSBuildEditorConfig.editorconfig
+e:\dev\HLHN\obj\Release\netstandard2.1\HLHN_AIChatMod.AssemblyInfoInputs.cache
+e:\dev\HLHN\obj\Release\netstandard2.1\HLHN_AIChatMod.AssemblyInfo.cs
+e:\dev\HLHN\obj\Release\netstandard2.1\HLHN_AIChatMod.csproj.CoreCompileInputs.cache
+e:\dev\HLHN\obj\Release\netstandard2.1\HLHN_AIChatMod.dll
+e:\dev\HLHN\obj\Release\netstandard2.1\HLHN_AIChatMod.pdb
