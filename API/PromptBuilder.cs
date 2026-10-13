@@ -66,6 +66,7 @@ namespace DialogInterceptorMod.API
             if (System.IO.File.Exists(systemPromptPath))
             {
                 string template = System.IO.File.ReadAllText(systemPromptPath);
+                template = MigrateCharacterRoster(template, systemPromptPath);
                 template = template.Replace("{CharacterContext}", characterContext);
                 template = template.Replace("{CustomRules}", customRules);
                 template = template.Replace("{Jailbreak}", jailbreak);
@@ -81,7 +82,7 @@ namespace DialogInterceptorMod.API
             var sb = new StringBuilder();
 
             sb.AppendLine("You are a real woman living in a house. You are NOT an AI, chatbot, or assistant — you are a living person with your own thoughts, feelings, desires, and personality.");
-            sb.AppendLine("You are one of four women (Laura, Susan, Stacy, or Katherine) who lives in this house with a man (the player). You stay fully in character at all times.");
+            sb.AppendLine(CharacterRosterLine);
             sb.AppendLine();
             sb.AppendLine("PERSONALITY GUIDELINES:");
             sb.AppendLine("- Your personality should match your character's stats below (Trust level, Submission, Perversion, Desire)");
@@ -171,6 +172,59 @@ namespace DialogInterceptorMod.API
             "# - Keep every reply under two sentences.\n";
 
         /// <summary>
+        /// Who lives in this house: four main characters, everyone else is a secondary character of
+        /// the neighbourhood. Kept as one line so the template, the default prompt and the migration
+        /// of an already-generated system_prompt.txt cannot drift apart; which of them the current NPC
+        /// is comes from the [ROLE] line of the character data.
+        /// </summary>
+        public const string CharacterRosterLine =
+            "You are one of the women of this neighbourhood. Katherine, Susan, Stacy and Laura are the four main " +
+            "characters who live in this house with the man (the player); any other woman is a secondary " +
+            "character of the neighbourhood. The [ROLE] line in your character data says which one you are. " +
+            "You stay fully in character at all times.";
+
+        /// <summary>The roster lines this mod used in previous versions that need migration.</summary>
+        private static readonly string[] OutdatedRosterLines = new string[]
+        {
+            "You are one of the women of this neighbourhood. Katherine, Susan and Stacy are the three main characters who live in this house with the man (the player); any other woman is a secondary character of the neighbourhood. The [ROLE] line in your character data says which one you are. You stay fully in character at all times.",
+            "You are one of four women (Laura, Susan, Stacy, or Katherine) who lives in this house with a man (the player). You stay fully in character at all times."
+        };
+
+        /// <summary>
+        /// system_prompt.txt is written once and then owned by the user, so a fact that changed later is
+        /// migrated in place: only that exact sentence is rewritten, everything else in the file is left
+        /// untouched, and an edited or absent line is simply kept as it is.
+        /// </summary>
+        private static string MigrateCharacterRoster(string template, string path)
+        {
+            if (string.IsNullOrEmpty(template)) return template;
+
+            bool modified = false;
+            foreach (var outdated in OutdatedRosterLines)
+            {
+                if (template.Contains(outdated))
+                {
+                    template = template.Replace(outdated, CharacterRosterLine);
+                    modified = true;
+                }
+            }
+
+            if (modified)
+            {
+                try
+                {
+                    System.IO.File.WriteAllText(path, template);
+                    Plugin.LogInfo($"{Plugin.SystemPromptFileName}: updated the character roster (four main characters: Katherine, Susan, Stacy, Laura).");
+                }
+                catch (Exception ex)
+                {
+                    Plugin.LogWarning($"Could not update the roster in {Plugin.SystemPromptFileName}: {ex.Message}");
+                }
+            }
+            return template;
+        }
+
+        /// <summary>
         /// Default contents of system_prompt.txt. The {Placeholders} are replaced on every request
         /// (see GenerateSystemPrompt), so the file stays editable without touching the code.
         /// </summary>
@@ -178,7 +232,7 @@ namespace DialogInterceptorMod.API
         {
             var templateSb = new StringBuilder();
             templateSb.AppendLine("You are a real woman living in a house. You are NOT an AI, chatbot, or assistant — you are a living person with your own thoughts, feelings, desires, and personality.");
-            templateSb.AppendLine("You are one of four women (Laura, Susan, Stacy, or Katherine) who lives in this house with a man (the player). You stay fully in character at all times.");
+            templateSb.AppendLine(CharacterRosterLine);
             templateSb.AppendLine();
             templateSb.AppendLine("PERSONALITY GUIDELINES:");
             templateSb.AppendLine("- LOW Trust (0-30): Cautious, reserved, cold. HIGH Trust (60-100): Affectionate, open, romantic. VERY HIGH (100+): Deeply in love.");

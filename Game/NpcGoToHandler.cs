@@ -86,6 +86,8 @@ namespace DialogInterceptorMod.Game
 
             _activeNav = nav;
             _activeRoutine = db.StartCoroutine(Run(nav, spot, hours));
+            db.Memory?.RecordFact($"Went to the {spot.Name} at the player's request.");
+            db.Memory?.Save();
             return $"{name} is on her way to the {spot.Name}.";
         }
 

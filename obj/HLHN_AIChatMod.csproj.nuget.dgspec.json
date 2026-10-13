@@ -1,17 +1,17 @@
 {
   "format": 1,
   "restore": {
-    "E:\\dev\\HLHN\\HLHN_AIChatMod.csproj": {}
+    "E:\\dev\\HLHN\\AIChat\\HLHN_AIChatMod.csproj": {}
   },
   "projects": {
-    "E:\\dev\\HLHN\\HLHN_AIChatMod.csproj": {
+    "E:\\dev\\HLHN\\AIChat\\HLHN_AIChatMod.csproj": {
       "version": "1.0.0",
       "restore": {
-        "projectUniqueName": "E:\\dev\\HLHN\\HLHN_AIChatMod.csproj",
+        "projectUniqueName": "E:\\dev\\HLHN\\AIChat\\HLHN_AIChatMod.csproj",
         "projectName": "HLHN_AIChatMod",
-        "projectPath": "E:\\dev\\HLHN\\HLHN_AIChatMod.csproj",
+        "projectPath": "E:\\dev\\HLHN\\AIChat\\HLHN_AIChatMod.csproj",
         "packagesPath": "C:\\Users\\Admin\\.nuget\\packages\\",
-        "outputPath": "E:\\dev\\HLHN\\obj\\",
+        "outputPath": "E:\\dev\\HLHN\\AIChat\\obj\\",
         "projectStyle": "PackageReference",
         "configFilePaths": [
           "C:\\Users\\Admin\\AppData\\Roaming\\NuGet\\NuGet.Config"

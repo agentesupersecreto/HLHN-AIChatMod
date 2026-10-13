@@ -131,8 +131,9 @@ namespace DialogInterceptorMod.API
                 if (foundCommands.Count > 0)
                     behaviour.Window.ScrollToBottom();
 
-                // Save history
+                // Save history and persistent character memory
                 behaviour.Window.SaveChatHistory();
+                behaviour.Memory?.Save();
             }
             catch (Exception ex)
             {

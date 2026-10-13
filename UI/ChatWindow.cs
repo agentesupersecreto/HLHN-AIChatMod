@@ -310,7 +310,7 @@ namespace DialogInterceptorMod.UI
             GUILayout.Label($"HLHN AI Chat v0.1 -- {charLabel}", ChatStyles.TitleStyle);
             GUILayout.FlexibleSpace();
 
-            if (GUILayout.Button("[Reload]", ChatStyles.ButtonStyle, GUILayout.Width(32)))
+            if (GUILayout.Button("[R]", ChatStyles.ButtonStyle, GUILayout.Width(32)))
                 ResetToDefaultPosition();
             if (GUILayout.Button("[X]", ChatStyles.ButtonStyle, GUILayout.Width(32)))
                 SetVisible(false);
@@ -428,6 +428,11 @@ namespace DialogInterceptorMod.UI
             {
                 _behaviour.ChatHistory.Clear();
                 _behaviour.ChatSummary = "";
+                if (_behaviour.Memory != null)
+                {
+                    _behaviour.Memory.Summary = "";
+                    _behaviour.Memory.Save();
+                }
             }
             GUILayout.FlexibleSpace();
             if (_behaviour.CurrentEmotions != null)
@@ -571,7 +576,6 @@ namespace DialogInterceptorMod.UI
             DrawDebugRow("Hotkey",        db.ChatHotkey.ToString());
             DrawDebugRow("History count", db.ChatHistory.Count.ToString());
             DrawDebugRow("Awaiting AI",   AwaitingResponse.ToString());
-            DrawDebugRow("Screen",        $"{Screen.width}x{Screen.height}");
             DrawDebugRow("FPS",           $"{(1f / Time.deltaTime):F1}");
 
             GUILayout.Space(6);
@@ -677,7 +681,13 @@ namespace DialogInterceptorMod.UI
             GUILayout.Label("-- Memory --", ChatStyles.DebugHeaderStyle);
             DrawDebugRow("Char bound",   db.Memory.CharacterName ?? "(none)");
             DrawDebugRow("Exchanges",    db.Memory.TotalExchangeCount.ToString());
+            DrawDebugRow("Facts count",  db.Memory.KeyFacts.Count.ToString());
             DrawDebugRow("Summary len",  (db.ChatSummary?.Length ?? 0).ToString() + " chars");
+            if (!string.IsNullOrEmpty(db.ChatSummary))
+            {
+                string preview = db.ChatSummary.Length > 80 ? db.ChatSummary.Substring(0, 77) + "..." : db.ChatSummary;
+                DrawDebugRow("Summary", preview);
+            }
 
             GUILayout.EndScrollView();
 
@@ -709,6 +719,16 @@ namespace DialogInterceptorMod.UI
             }
             if (GUILayout.Button("List places", ChatStyles.ButtonStyle))
                 SetStatus(Game.NpcGoToHandler.ListPlaces(), false);
+            GUILayout.EndHorizontal();
+
+            GUILayout.BeginHorizontal();
+            if (GUILayout.Button("Dump animations", ChatStyles.ButtonStyle))
+            {
+                string path = Game.AnimationCatalog.Dump();
+                SetStatus(path != null
+                    ? "Animations written to BepInEx/config/AIChat/animations_dump.txt"
+                    : "Could not write animations_dump.txt.", path == null);
+            }
             GUILayout.EndHorizontal();
         }
 
@@ -915,9 +935,9 @@ namespace DialogInterceptorMod.UI
             {
                 if (string.IsNullOrEmpty(_behaviour.CurrentCharName)) return;
 
-                string dir = Path.Combine(Application.persistentDataPath, "AIchat", "History");
-                if (!Directory.Exists(dir))
-                    Directory.CreateDirectory(dir);
+                // BepInEx/config/AIChat/history (see Plugin.GetDataDir), not the Unity save folder.
+                string dir = Plugin.GetDataDir(Plugin.HistoryDirName);
+                if (string.IsNullOrEmpty(dir)) return;
 
                 string path = Path.Combine(dir, $"{_behaviour.CurrentCharName}_history.txt");
                 var lines = new List<string>();

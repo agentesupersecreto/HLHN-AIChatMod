@@ -27,9 +27,15 @@ namespace DialogInterceptorMod.Core
         /// </summary>
         public const string LocationsFileName = "locations.txt";
 
+        /// <summary>Per-character memory folder, inside <see cref="ConfigDir"/>.</summary>
+        public const string MemoryDirName = "memory";
+
+        /// <summary>Chat history folder, inside <see cref="ConfigDir"/>.</summary>
+        public const string HistoryDirName = "history";
+
         /// <summary>
-        /// Folder holding every user file of the mod (settings, prompts): BepInEx/config/AIChat.
-        /// Created on demand so the user always has the files to edit.
+        /// Folder holding every user file of the mod (settings, prompts, memory, history):
+        /// BepInEx/config/AIChat. Created on demand so the user always has the files to edit.
         /// </summary>
         public static string ConfigDir { get; private set; } = "";
 
@@ -37,6 +43,29 @@ namespace DialogInterceptorMod.Core
         public static string GetConfigFilePath(string fileName)
         {
             return Path.Combine(ConfigDir, fileName);
+        }
+
+        /// <summary>
+        /// Full path of a subfolder of <see cref="ConfigDir"/>, created on demand. Per-character memory
+        /// and chat history live here (not in the Unity save folder) so everything the mod writes sits
+        /// together with the settings and can be backed up in one go. Returns "" when the config folder
+        /// could not be resolved (the caller then simply does not persist anything).
+        /// </summary>
+        public static string GetDataDir(string dirName)
+        {
+            EnsureConfigDir();
+            if (string.IsNullOrEmpty(ConfigDir)) return "";
+
+            string path = Path.Combine(ConfigDir, dirName);
+            try
+            {
+                if (!Directory.Exists(path)) Directory.CreateDirectory(path);
+            }
+            catch (Exception ex)
+            {
+                LogWarning($"Could not create folder {path}: {ex.Message}");
+            }
+            return path;
         }
 
         /// <summary>Creates <see cref="ConfigDir"/> when it does not exist yet.</summary>
@@ -105,6 +134,54 @@ namespace DialogInterceptorMod.Core
             }
         }
 
+        /// <summary>
+        /// Moves the per-character files written by earlier versions from the Unity save folder
+        /// (&lt;persistentDataPath&gt;/AIchat/&lt;folder&gt;) into BepInEx/config/AIChat/&lt;folder&gt;.
+        /// A file that already exists in the new location always wins, so nothing is overwritten.
+        /// </summary>
+        private static void MigrateDataFolder(string legacyFolderName, string targetFolderName)
+        {
+            string legacyDir = Path.Combine(UnityEngine.Application.persistentDataPath, "AIchat", legacyFolderName);
+            if (!Directory.Exists(legacyDir)) return;
+
+            string targetDir = GetDataDir(targetFolderName);
+            if (string.IsNullOrEmpty(targetDir)) return;
+
+            try
+            {
+                int moved = 0;
+                foreach (string file in Directory.GetFiles(legacyDir))
+                {
+                    string target = Path.Combine(targetDir, Path.GetFileName(file));
+                    if (File.Exists(target)) continue;
+
+                    try
+                    {
+                        File.Move(file, target);
+                        moved++;
+                    }
+                    catch (Exception ex)
+                    {
+                        LogWarning($"Could not move {file}: {ex.Message}");
+                    }
+                }
+
+                if (moved > 0) LogInfo($"Migrated {moved} file(s): {legacyDir} -> {targetDir}");
+
+                // Drop the old folder when it is empty; keep it otherwise (something may be in use).
+                try
+                {
+                    if (Directory.GetFiles(legacyDir).Length == 0 && Directory.GetDirectories(legacyDir).Length == 0)
+                        Directory.Delete(legacyDir, false);
+                }
+                catch (Exception) { /* leaving an empty folder behind is harmless */ }
+            }
+            catch (Exception ex)
+            {
+                LogWarning($"Could not migrate {legacyDir}: {ex.Message}");
+            }
+        }
+
         public void Awake()
         {
             try
@@ -119,6 +196,11 @@ namespace DialogInterceptorMod.Core
                 EnsureConfigDir();
                 LogInfo($"Config folder: {ConfigDir}");
 
+                // Create the per-character data folders up front so the user sees them right away;
+                // the files themselves are written on demand.
+                GetDataDir(MemoryDirName);
+                GetDataDir(HistoryDirName);
+
                 // Import files written by earlier versions:
                 //   BepInEx/config/HLHN_AIChatMod.ini
                 //   BepInEx/AIchat/custom_prompt.txt
@@ -126,6 +208,11 @@ namespace DialogInterceptorMod.Core
                 MigrateFile(Path.Combine(bepInExConfig, SettingsFileName), SettingsFileName);
                 MigrateFile(Path.Combine(Path.GetDirectoryName(ConfigPath ?? ".") ?? ".", "AIchat", CustomPromptFileName), CustomPromptFileName);
                 MigrateFile(Path.Combine(UnityEngine.Application.persistentDataPath, "AIchat", SystemPromptFileName), SystemPromptFileName);
+
+                // Memory and history used to live under Application.persistentDataPath/AIchat; bring them
+                // next to the settings so the whole mod folder can be moved or backed up in one piece.
+                MigrateDataFolder("Memory", MemoryDirName);
+                MigrateDataFolder("History", HistoryDirName);
 
                 var harmony = new Harmony(PluginInfo.PLUGIN_GUID);
                 harmony.PatchAll();

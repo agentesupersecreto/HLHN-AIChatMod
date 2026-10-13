@@ -1,4 +1,7 @@
 Assembly-CSharp/
 .codegraph/
 bin/
+obj/
 update_log.txt
+AGENTS.md
+ANIMATIONS.md

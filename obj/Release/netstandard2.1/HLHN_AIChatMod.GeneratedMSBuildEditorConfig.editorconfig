@@ -1,6 +1,6 @@
 is_global = true
 build_property.RootNamespace = DialogInterceptorMod
-build_property.ProjectDir = E:\dev\HLHN\
+build_property.ProjectDir = E:\dev\HLHN\AIChat\
 build_property.EnableComHosting = 
 build_property.EnableGeneratedComInterfaceComImportInterop = 
 build_property.CsWinRTUseWindowsUIXamlProjections = false

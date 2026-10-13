@@ -177,8 +177,12 @@ namespace DialogInterceptorMod.Core
         public void ResetMemory()
         {
             Memory = new ConversationMemory();
+            ChatSummary = "";
             if (!string.IsNullOrEmpty(CurrentCharName))
+            {
                 Memory.Bind(CurrentCharName);
+                Memory.Save();
+            }
         }
 
         public void RebuildApiClient()
@@ -343,6 +347,7 @@ namespace DialogInterceptorMod.Core
                     if (_noNpcTimer >= NO_NPC_GRACE_SECONDS && !string.IsNullOrEmpty(CurrentCharName))
                     {
                         Plugin.LogDebug($"No NPC in range for {NO_NPC_GRACE_SECONDS}s — clearing active NPC: {CurrentCharName}");
+                        Memory.Summary = ChatSummary;
                         Memory.Save();
                         CurrentCharName = "";
                         CurrentSpeach = null;
@@ -351,6 +356,7 @@ namespace DialogInterceptorMod.Core
                         CurrentNavigator = null;
                         CurrentInteractionManager = null;
                         _lastCharName = "";
+                        ChatSummary = "";
                     }
                     return;
                 }
@@ -369,6 +375,7 @@ namespace DialogInterceptorMod.Core
                     if (!string.IsNullOrEmpty(_lastCharName))
                     {
                         // Save memory for previous character
+                        Memory.Summary = ChatSummary;
                         Memory.Save();
 
                         // Clear chat history on character swap
@@ -383,6 +390,7 @@ namespace DialogInterceptorMod.Core
                     Memory = new ConversationMemory();
                     Memory.Bind(npcName);
                     Memory.Load();
+                    ChatSummary = Memory.Summary; // Restore persistent summary
                 }
 
                 CurrentCharName = npcName;
@@ -391,6 +399,11 @@ namespace DialogInterceptorMod.Core
                 CurrentTalkInteractions = speach.GetComponent<TalkInteractions>();
                 CurrentNavigator = speach.GetComponent<NpcNavigatorAndRutines>();
                 CurrentInteractionManager = speach.GetComponent<NpcInteractionManager>();
+
+                if (CurrentEmotions != null)
+                {
+                    Memory.UpdateMilestones(CurrentEmotions, CurrentInteractionManager);
+                }
             }
             catch (Exception ex)
             {
@@ -476,6 +489,10 @@ namespace DialogInterceptorMod.Core
         /// </summary>
         public CharacterContextSnapshot CaptureCharacterContext()
         {
+            if (CurrentEmotions != null && Memory != null)
+            {
+                Memory.UpdateMilestones(CurrentEmotions, CurrentInteractionManager);
+            }
             return CharacterContextSnapshot.Capture(CurrentEmotions, CurrentTalkInteractions, CurrentNavigator, CurrentInteractionManager, CurrentCharName);
         }
 

@@ -103,7 +103,12 @@ namespace DialogInterceptorMod.Core
                 snapshot.TalkPointsToday = talkInteractions.PointsToday;
                 snapshot.TalkMaxPointsToday = talkInteractions.MaxPointsToday;
                 snapshot.TalkMaxPoints = talkInteractions.MaxPoints;
-                snapshot.IsRandomCharacter = talkInteractions.IsARandomCharacter;
+                // Katherine, Susan, Stacy, and Laura are always main characters, never random
+                snapshot.IsRandomCharacter = talkInteractions.IsARandomCharacter && !IsMainCharacterName(charName);
+            }
+            else
+            {
+                snapshot.IsRandomCharacter = !IsMainCharacterName(charName);
             }
 
             if (navigator != null)
@@ -152,6 +157,20 @@ namespace DialogInterceptorMod.Core
         }
 
         /// <summary>
+        /// Checks whether the character name corresponds to one of the four main characters:
+        /// Katherine, Susan, Stacy, or Laura.
+        /// </summary>
+        public static bool IsMainCharacterName(string name)
+        {
+            if (string.IsNullOrEmpty(name)) return false;
+            string n = name.Trim();
+            return n.IndexOf("Katherine", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   n.IndexOf("Susan", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   n.IndexOf("Stacy", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   n.IndexOf("Laura", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        /// <summary>
         /// Generates a compact prompt block with all character stats, clothing status, and action states.
         /// </summary>
         public string ToPromptBlock()
@@ -161,6 +180,13 @@ namespace DialogInterceptorMod.Core
 
             var sb = new StringBuilder();
             sb.AppendLine($"[CHARACTER] {Name}");
+
+            // Who she is: the game has four main characters living in this house (Katherine, Susan,
+            // Stacy, and Laura) and the rest are secondary women of the neighbourhood.
+            bool isMain = IsMainCharacterName(Name) || !IsRandomCharacter;
+            sb.AppendLine(isMain
+                ? "[ROLE] One of the four women who live in this house with the man (the player): Katherine, Susan, Stacy and Laura."
+                : "[ROLE] A secondary character of the neighbourhood, NOT one of the four women who live in this house (Katherine, Susan, Stacy, Laura). Do not claim their home, their routine or their relationship with the player as your own.");
             sb.AppendLine($"[STATS] Trust:{Trust:F0} Level:{Level} Submission:{Submission} Perversion:{Perversion} Desire:{Desire}");
             sb.AppendLine($"[AROUSAL] HornyLevel:{HornyLevel:F0} IsBeingFucked:{IsBeingFucked} WasFuckedToday:{WasFuckedToday} HadOrgasmToday:{HadOrgasmToday} Orgasms:{OrgasmCount}");
 

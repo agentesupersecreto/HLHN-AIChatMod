@@ -12,6 +12,8 @@ namespace DialogInterceptorMod.API
     {
         private DialogBehaviour _behaviour;
 
+        private bool _isSummarizing = false;
+
         public GeminiClient(DialogBehaviour behaviour)
         {
             _behaviour = behaviour;
@@ -21,12 +23,6 @@ namespace DialogInterceptorMod.API
         {
             string url = $"https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-lite-latest:generateContent?key={_behaviour.ApiKey}";
             string systemPromptStr = PromptBuilder.GenerateSystemPrompt(userMessage);
-
-            // Include summary in system prompt if available
-            if (!string.IsNullOrEmpty(_behaviour.ChatSummary))
-            {
-                systemPromptStr = $"[PAST EVENTS SUMMARY]\n{_behaviour.ChatSummary}\n[END SUMMARY]\n\n{systemPromptStr}";
-            }
 
             StringBuilder contentsJson = new StringBuilder();
             contentsJson.Append("[");
@@ -86,7 +82,7 @@ namespace DialogInterceptorMod.API
             _behaviour.Window.AwaitingResponse = false;
 
             // Gemini uses summarization for memory
-            if (_behaviour.ChatHistory.Count > 10)
+            if (_behaviour.ChatHistory.Count > 10 && !_isSummarizing)
             {
                 _behaviour.StartCoroutine(GenerateSummaryAndClean());
             }
@@ -94,8 +90,15 @@ namespace DialogInterceptorMod.API
 
         private IEnumerator GenerateSummaryAndClean()
         {
+            if (_isSummarizing) yield break;
+            _isSummarizing = true;
+
             int messagesToSummarize = 6;
-            if (_behaviour.ChatHistory.Count <= messagesToSummarize) yield break;
+            if (_behaviour.ChatHistory.Count <= messagesToSummarize)
+            {
+                _isSummarizing = false;
+                yield break;
+            }
 
             StringBuilder textToSummarize = new StringBuilder();
             int counted = 0;
@@ -126,6 +129,7 @@ namespace DialogInterceptorMod.API
             if (request.result == UnityWebRequest.Result.ConnectionError || request.result == UnityWebRequest.Result.ProtocolError)
             {
                 Plugin.Log.LogWarning($"Could not generate the conversation summary: {request.error}");
+                _isSummarizing = false;
                 yield break;
             }
 
@@ -134,7 +138,12 @@ namespace DialogInterceptorMod.API
 
             if (!string.IsNullOrEmpty(aiText))
             {
-                _behaviour.ChatSummary = aiText;
+                _behaviour.ChatSummary = aiText.Trim();
+                if (_behaviour.Memory != null)
+                {
+                    _behaviour.Memory.Summary = _behaviour.ChatSummary;
+                    _behaviour.Memory.Save();
+                }
                 // Remove the oldest non-system messages
                 int removed = 0;
                 while (removed < messagesToSummarize && _behaviour.ChatHistory.Count > 0)
@@ -151,6 +160,7 @@ namespace DialogInterceptorMod.API
                 }
                 Plugin.Log.LogInfo($"Summary updated. Remaining messages: {_behaviour.ChatHistory.Count}");
             }
+            _isSummarizing = false;
         }
 
         private string ExtractErrorMessage(string errorJson)

@@ -127,6 +127,8 @@ namespace DialogInterceptorMod.Game
                 if (refusal != null) return refusal;
 
                 navigator.MakeNpcFollowMe();
+                DialogBehaviour.Instance?.Memory?.RecordFact("Agreed to follow the player around.");
+                DialogBehaviour.Instance?.Memory?.Save();
                 return $"{charName} is now following you.";
             }
             else
@@ -205,14 +207,45 @@ namespace DialogInterceptorMod.Game
             if (mgr != null)
             {
                 mgr.KissHer();
+                DialogBehaviour.Instance?.Memory?.RecordFact("Kissed passionately with the player.");
+                DialogBehaviour.Instance?.Memory?.Save();
                 return $"{charName} kissed you!";
             }
             if (emotions != null)
             {
                 emotions.NpcKiss();
+                DialogBehaviour.Instance?.Memory?.RecordFact("Kissed passionately with the player.");
+                DialogBehaviour.Instance?.Memory?.Save();
                 return $"{charName} kissed you!";
             }
             return "No NPC available for kiss.";
+        }
+
+        private static void RecordClothFact(string slot, bool remove)
+        {
+            var mem = DialogBehaviour.Instance?.Memory;
+            if (mem == null) return;
+
+            if (remove)
+            {
+                if (slot == "panty" || slot == "panties" || slot == "underwear")
+                    mem.RecordFact("Took off panties in front of the player.");
+                else if (slot == "bra")
+                    mem.RecordFact("Took off bra in front of the player.");
+                else
+                    mem.RecordFact($"Took off {slot} in front of the player.");
+            }
+            else
+            {
+                mem.RecordFact($"Put on {slot}.");
+            }
+
+            var mgr = DialogBehaviour.Instance?.CurrentInteractionManager;
+            if (mgr != null && mgr.IsNaked)
+            {
+                mem.RecordMilestone("NUDITY", "Has been completely naked around the player.");
+            }
+            mem.Save();
         }
 
         private static string ExecuteClothAction(string slot, bool remove)
@@ -238,6 +271,7 @@ namespace DialogInterceptorMod.Game
                     if (mgr.Dress != null && mgr.Dress.activeSelf == remove)
                     {
                         if (canAnimate) mgr.PutRemoveDress(); else mgr.PutRemoveDressNOA();
+                        RecordClothFact("dress", remove);
                         return $"Dress {(remove ? "removed" : "put on")}.";
                     }
                     return mgr.Dress == null ? "Character has no dress." : $"Dress is already {(remove ? "removed" : "on")}.";
@@ -247,6 +281,7 @@ namespace DialogInterceptorMod.Game
                     if (mgr.Shirt != null && mgr.Shirt.activeSelf == remove)
                     {
                         if (canAnimate) mgr.RemoveShirt(); else mgr.PutRemoveShirtNOA();
+                        RecordClothFact("shirt", remove);
                         return $"Shirt {(remove ? "removed" : "put on")}.";
                     }
                     return mgr.Shirt == null ? "Character has no shirt." : $"Shirt is already {(remove ? "removed" : "on")}.";
@@ -256,6 +291,7 @@ namespace DialogInterceptorMod.Game
                     if (mgr.Pants != null && mgr.Pants.activeSelf == remove)
                     {
                         if (canAnimate) mgr.RemovePants(); else mgr.PutRemovePantsNOA();
+                        RecordClothFact("pants", remove);
                         return $"Pants {(remove ? "removed" : "put on")}.";
                     }
                     return mgr.Pants == null ? "Character has no pants." : $"Pants are already {(remove ? "removed" : "on")}.";
@@ -264,6 +300,7 @@ namespace DialogInterceptorMod.Game
                     if (mgr.Skirt != null && mgr.Skirt.activeSelf == remove)
                     {
                         if (canAnimate) mgr.RemoveSkirt(); else mgr.PutRemoveSkirtNOA();
+                        RecordClothFact("skirt", remove);
                         return $"Skirt {(remove ? "removed" : "put on")}.";
                     }
                     return mgr.Skirt == null ? "Character has no skirt." : $"Skirt is already {(remove ? "removed" : "on")}.";
@@ -272,6 +309,7 @@ namespace DialogInterceptorMod.Game
                     if (mgr.Bra != null && mgr.Bra.activeSelf == remove)
                     {
                         if (canAnimate) mgr.RemoveBra(); else mgr.PutRemoveBraNOA();
+                        RecordClothFact("bra", remove);
                         return $"Bra {(remove ? "removed" : "put on")}.";
                     }
                     return mgr.Bra == null ? "Character has no bra." : $"Bra is already {(remove ? "removed" : "on")}.";
@@ -282,6 +320,7 @@ namespace DialogInterceptorMod.Game
                     if (mgr.Panty != null && mgr.Panty.activeSelf == remove)
                     {
                         if (canAnimate) mgr.RemovePanty(); else mgr.PutRemovePantyNOA();
+                        RecordClothFact("panties", remove);
                         return $"Panty {(remove ? "removed" : "put on")}.";
                     }
                     return mgr.Panty == null ? "Character has no panties." : $"Panty is already {(remove ? "removed" : "on")}.";
@@ -291,6 +330,7 @@ namespace DialogInterceptorMod.Game
                     if (mgr.SocksStocking != null && mgr.SocksStocking.activeSelf == remove)
                     {
                         if (canAnimate) mgr.RemoveSocks(); else mgr.PutRemoveSocksNOA();
+                        RecordClothFact("socks", remove);
                         return $"Socks {(remove ? "removed" : "put on")}.";
                     }
                     return mgr.SocksStocking == null ? "Character has no socks." : $"Socks are already {(remove ? "removed" : "on")}.";
@@ -299,6 +339,7 @@ namespace DialogInterceptorMod.Game
                     if (mgr.Shoes != null && mgr.Shoes.activeSelf == remove)
                     {
                         if (canAnimate) mgr.RemoveShoes(); else mgr.PutRemoveShoesNOA();
+                        RecordClothFact("shoes", remove);
                         return $"Shoes {(remove ? "removed" : "put on")}.";
                     }
                     return mgr.Shoes == null ? "Character has no shoes." : $"Shoes are already {(remove ? "removed" : "on")}.";
@@ -307,6 +348,7 @@ namespace DialogInterceptorMod.Game
                     if (mgr.Jacket != null && mgr.Jacket.activeSelf == remove)
                     {
                         if (canAnimate) mgr.RemoveJacket(); else mgr.RemoveJacketNOA();
+                        RecordClothFact("jacket", remove);
                         return $"Jacket {(remove ? "removed" : "put on")}.";
                     }
                     return mgr.Jacket == null ? "Character has no jacket." : $"Jacket is already {(remove ? "removed" : "on")}.";
@@ -315,6 +357,7 @@ namespace DialogInterceptorMod.Game
                     if (mgr.Belt != null && mgr.Belt.activeSelf == remove)
                     {
                         if (canAnimate) mgr.RemoveBelt(); else mgr.RemoveBeltNOA();
+                        RecordClothFact("belt", remove);
                         return $"Belt {(remove ? "removed" : "put on")}.";
                     }
                     return mgr.Belt == null ? "Character has no belt." : $"Belt is already {(remove ? "removed" : "on")}.";
@@ -323,6 +366,7 @@ namespace DialogInterceptorMod.Game
                     if (mgr.Glasses != null && mgr.Glasses.activeSelf == remove)
                     {
                         if (canAnimate) mgr.RemoveGlasses(); else mgr.RemoveGlassesNOA();
+                        RecordClothFact("glasses", remove);
                         return $"Glasses {(remove ? "removed" : "put on")}.";
                     }
                     return mgr.Glasses == null ? "Character has no glasses." : $"Glasses are already {(remove ? "removed" : "on")}.";
@@ -331,6 +375,7 @@ namespace DialogInterceptorMod.Game
                     if (mgr.Gloves != null && mgr.Gloves.activeSelf == remove)
                     {
                         if (canAnimate) mgr.RemoveGloves(); else mgr.RemoveGlovesNOA();
+                        RecordClothFact("gloves", remove);
                         return $"Gloves {(remove ? "removed" : "put on")}.";
                     }
                     return mgr.Gloves == null ? "Character has no gloves." : $"Gloves are already {(remove ? "removed" : "on")}.";
@@ -339,6 +384,7 @@ namespace DialogInterceptorMod.Game
                     if (mgr.Hat != null && mgr.Hat.activeSelf == remove)
                     {
                         if (canAnimate) mgr.RemoveHat(); else mgr.RemoveHatNOA();
+                        RecordClothFact("hat", remove);
                         return $"Hat {(remove ? "removed" : "put on")}.";
                     }
                     return mgr.Hat == null ? "Character has no hat." : $"Hat is already {(remove ? "removed" : "on")}.";
@@ -347,6 +393,7 @@ namespace DialogInterceptorMod.Game
                     if (mgr.Collar != null && mgr.Collar.activeSelf == remove)
                     {
                         if (canAnimate) mgr.RemoveCollar(); else mgr.RemoveCollarNOA();
+                        RecordClothFact("collar", remove);
                         return $"Collar {(remove ? "removed" : "put on")}.";
                     }
                     return mgr.Collar == null ? "Character has no collar." : $"Collar is already {(remove ? "removed" : "on")}.";
@@ -367,6 +414,7 @@ namespace DialogInterceptorMod.Game
                     if (mgr.Gloves != null && mgr.Gloves.activeSelf == remove) { mgr.RemoveGlovesNOA(); count++; }
                     if (mgr.Hat != null && mgr.Hat.activeSelf == remove) { mgr.RemoveHatNOA(); count++; }
                     if (mgr.Collar != null && mgr.Collar.activeSelf == remove) { mgr.RemoveCollarNOA(); count++; }
+                    RecordClothFact("all clothes", remove);
                     return $"{(remove ? "Removed" : "Put on")} {count} clothing items.";
 
                 default:
