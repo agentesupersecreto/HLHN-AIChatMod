@@ -147,8 +147,7 @@ The AI can embed action commands into its replies to trigger in-game behaviors s
 |---|---|
 | The chat window doesn't open with F9 | Ensure BepInEx 5 is installed and `HLHN_AIChatMod.dll` is inside `BepInEx/plugins/`. Check `BepInEx/LogOutput.log`. |
 | Interaction menu doesn't show "AI" option | Stand in front of the NPC, then press **E**. If you press E when the girl has her back to you or is turned to the side, the AI option won't appear. |
-| AI returns empty or slow replies | For local AI, ensure LM Studio or Ollama is running and the model is loaded. Depending on your computer, the screen may freeze and responses may be slow.
-For Gemini, verify your API key in Settings (**F9 → CONFIG**), on some occasions, the Gemini service may be busy. |
+| AI returns empty or slow replies | For local AI, ensure LM Studio or Ollama is running and the model is loaded. Depending on your computer, the screen may freeze and responses may be slow. For Gemini, verify your API key in Settings (**F9 → CONFIG**), on some occasions, the Gemini service may be busy. |
 | Tutorial images are missing or white | Verify that `1.jpg` through `5.jpg` (or `.png`) are placed in `BepInEx/config/AIChat/`. |
 | UI mod turn transparent after scene change | IMGUI textures auto-reload on scene load; if needed, click **Force Reinit Styles** under the Debug tab. |
 
