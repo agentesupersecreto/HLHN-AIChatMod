@@ -91,7 +91,7 @@ namespace DialogInterceptorMod.API
             AIResponseProcessor.ProcessResponse(aiText, _behaviour, "Gemma");
             _behaviour.Window.AwaitingResponse = false;
 
-            if (_behaviour.ChatHistory.Count > 10 && !_isSummarizing)
+            if (_behaviour.ChatHistory.Count > ConversationMemory.SummarizeThreshold && !_isSummarizing)
             {
                 _behaviour.StartCoroutine(GenerateSummaryAndClean());
             }
@@ -102,29 +102,19 @@ namespace DialogInterceptorMod.API
             if (_isSummarizing) yield break;
             _isSummarizing = true;
 
-            int messagesToSummarize = 6;
-            if (_behaviour.ChatHistory.Count <= messagesToSummarize)
+            int toConsume = ConversationMemory.MessagesToSummarize;
+            if (_behaviour.ChatHistory.Count <= toConsume)
             {
                 _isSummarizing = false;
                 yield break;
             }
 
-            StringBuilder textToSummarize = new StringBuilder();
-            int counted = 0;
-            for (int i = 0; i < _behaviour.ChatHistory.Count && counted < messagesToSummarize; i++)
-            {
-                var msg = _behaviour.ChatHistory[i];
-                if (msg.IsSystem) continue;
-                textToSummarize.AppendLine((msg.IsUser ? "Player: " : "Model: ") + msg.Text);
-                counted++;
-            }
+            string promptText = ConversationMemory.BuildSummarizationPrompt(
+                _behaviour.ChatSummary, _behaviour.ChatHistory, toConsume);
 
             string url = NormalizeGemmaUrl(_behaviour.GemmaUrl);
-            string currentSummary = _behaviour.ChatSummary;
-            string sysPrompt = "Summarize the key events and context of this conversation briefly in English (max 2-3 sentences). Combine it with the previous summary if provided.";
-            string promptText = (string.IsNullOrEmpty(currentSummary) ? "" : $"Previous Summary: {currentSummary}\n\n") + $"New Chat Messages to summarize:\n{textToSummarize}";
 
-            string gemmaPrompt = $"{START_OF_TURN}user\n{sysPrompt}\n\n{promptText}\n{END_OF_TURN}\n{START_OF_TURN}model\n";
+            string gemmaPrompt = $"{START_OF_TURN}user\n{ConversationMemory.SummarizationInstruction}\n\n{promptText}\n{END_OF_TURN}\n{START_OF_TURN}model\n";
             string escapedPrompt = JsonHelper.EscapeJson(gemmaPrompt);
             string body = $"{{\"model\":\"{JsonHelper.EscapeJson(_behaviour.GemmaModel)}\",\"prompt\":\"{escapedPrompt}\",\"stream\":false,\"options\":{{\"num_predict\":120}}}}";
 
@@ -148,28 +138,10 @@ namespace DialogInterceptorMod.API
             string aiText = JsonHelper.ExtractJsonValue(rawResponse, "response");
             aiText = TruncateAtTurnBoundary(aiText);
 
-            if (!string.IsNullOrEmpty(aiText))
+            if (!string.IsNullOrEmpty(aiText) && _behaviour.Memory != null)
             {
                 _behaviour.ChatSummary = aiText.Trim();
-                if (_behaviour.Memory != null)
-                {
-                    _behaviour.Memory.Summary = _behaviour.ChatSummary;
-                    _behaviour.Memory.Save();
-                }
-                int removed = 0;
-                while (removed < messagesToSummarize && _behaviour.ChatHistory.Count > 0)
-                {
-                    if (!_behaviour.ChatHistory[0].IsSystem)
-                    {
-                        _behaviour.ChatHistory.RemoveAt(0);
-                        removed++;
-                    }
-                    else
-                    {
-                        _behaviour.ChatHistory.RemoveAt(0);
-                    }
-                }
-                Plugin.Log.LogInfo($"Gemma summary updated. Remaining messages: {_behaviour.ChatHistory.Count}");
+                _behaviour.Memory.ApplySummaryResult(aiText, _behaviour.ChatHistory, toConsume);
             }
             _isSummarizing = false;
         }

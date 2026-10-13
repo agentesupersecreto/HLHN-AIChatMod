@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 using DialogInterceptorMod.Models;
 using DialogInterceptorMod.UI;
 using DialogInterceptorMod.API;
@@ -34,9 +35,9 @@ namespace DialogInterceptorMod.Core
         public string ApiKey = "";
         public ProviderType Provider = ProviderType.Ollama;
         public string OllamaUrl = "http://localhost:11434/api/chat";
-        public string OllamaModel = "gemma3:4b";
+        public string OllamaModel = "defyma85/gemma-4-E4B-it-ultra-uncensored-heretic-Q4_K_M_gguf";
         public string GemmaUrl = "http://localhost:11434/api/generate";
-        public string GemmaModel = "gemma3:4b";
+        public string GemmaModel = "defyma85/gemma-4-E4B-it-ultra-uncensored-heretic-Q4_K_M_gguf";
         public KeyCode ChatHotkey { get; set; } = KeyCode.F9;
 
         // --- Mod settings ---
@@ -114,15 +115,54 @@ namespace DialogInterceptorMod.Core
             Window = new ChatWindow(this);
             Game.NativeDialogueInputHandler.Init();
 
-            // Creates BepInEx/config/AIChat/{system_prompt,custom_prompt,locations}.txt on first run
+            // Creates BepInEx/config/AIChat/{system_prompt,custom_prompt}.txt on first run
             PromptBuilder.EnsurePromptFiles();
-            Game.LocationCatalog.EnsureLocationsFile();
         }
 
         private void Start()
         {
             Window.Initialize();
             RebuildApiClient();
+        }
+
+        private void OnEnable()
+        {
+            SceneManager.sceneUnloaded += OnSceneUnloaded;
+        }
+
+        private void OnDisable()
+        {
+            SceneManager.sceneUnloaded -= OnSceneUnloaded;
+            // Save memory when the mod behaviour is disabled (game exit, etc.)
+            if (!string.IsNullOrEmpty(CurrentCharName) && Memory != null)
+            {
+                Memory.Summary = ChatSummary;
+                Memory.Save();
+                Plugin.LogInfo($"Memory saved on disable for {CurrentCharName}.");
+            }
+        }
+
+        /// <summary>
+        /// Called by Unity when any scene is unloaded (House → Beach, etc.).
+        /// Saves conversation memory before NPCs are destroyed so nothing is lost.
+        /// </summary>
+        private void OnSceneUnloaded(Scene scene)
+        {
+            if (!string.IsNullOrEmpty(CurrentCharName) && Memory != null)
+            {
+                Memory.Summary = ChatSummary;
+                Memory.Save();
+                Plugin.LogInfo($"Scene '{scene.name}' unloading — memory saved for {CurrentCharName}.");
+            }
+
+            // Invalidate cached scene-bound objects so they're re-found in the new scene
+            _speachListener = null;
+            _notMove = null;
+            CurrentSpeach = null;
+            CurrentEmotions = null;
+            CurrentTalkInteractions = null;
+            CurrentNavigator = null;
+            CurrentInteractionManager = null;
         }
 
         /// <summary>

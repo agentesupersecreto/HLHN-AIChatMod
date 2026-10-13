@@ -40,6 +40,8 @@ namespace DialogInterceptorMod.API
                 }
                 dialogue = dialogue.Trim();
 
+                string detectedStyle = null;
+
                 // Handle JSON responses (some models emit JSON even in plain-text mode).
                 // English keys are the documented protocol; the Spanish keys are legacy
                 // (older prompts and user-edited system_prompt.txt templates) and still work.
@@ -65,12 +67,18 @@ namespace DialogInterceptorMod.API
                                     foundCommands.Add(c);
                             }
                         }
+
+                        string innerStyle = JsonHelper.ExtractJsonValue(dialogue, "style");
+                        if (string.IsNullOrEmpty(innerStyle))
+                            innerStyle = JsonHelper.ExtractJsonValue(dialogue, "estilo");
+                        if (!string.IsNullOrEmpty(innerStyle))
+                            detectedStyle = innerStyle.Trim();
+
                         dialogue = innerDialogue;
                     }
                 }
 
                 // Extract [STYLE: name]
-                string detectedStyle = null;
                 var styleMatches = Regex.Matches(dialogue, @"\[STYLE:\s*([^\]]+)\]", RegexOptions.IgnoreCase);
                 foreach (Match m in styleMatches)
                 {
@@ -97,6 +105,9 @@ namespace DialogInterceptorMod.API
 
                     // *** KEY: Show the AI response in the game's native dialogue system ***
                     ShowInGameDialogue(behaviour, dialogue);
+
+                    // *** KEY: Trigger facial expression and reaction animation ***
+                    CharacterReactionController.TriggerReaction(behaviour, detectedStyle, dialogue);
 
                     // Sentiment analysis → Trust modification
                     if (!string.IsNullOrEmpty(detectedStyle))

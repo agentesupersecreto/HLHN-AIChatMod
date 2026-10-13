@@ -49,6 +49,7 @@ namespace DialogInterceptorMod.API
             request.uploadHandler = new UploadHandlerRaw(bodyBytes);
             request.downloadHandler = new DownloadHandlerBuffer();
             request.SetRequestHeader("Content-Type", "application/json");
+            request.timeout = 30; // Prevent hanging if Gemini API is unresponsive
 
             yield return request.SendWebRequest();
 
@@ -82,7 +83,7 @@ namespace DialogInterceptorMod.API
             _behaviour.Window.AwaitingResponse = false;
 
             // Gemini uses summarization for memory
-            if (_behaviour.ChatHistory.Count > 10 && !_isSummarizing)
+            if (_behaviour.ChatHistory.Count > ConversationMemory.SummarizeThreshold && !_isSummarizing)
             {
                 _behaviour.StartCoroutine(GenerateSummaryAndClean());
             }
@@ -93,36 +94,26 @@ namespace DialogInterceptorMod.API
             if (_isSummarizing) yield break;
             _isSummarizing = true;
 
-            int messagesToSummarize = 6;
-            if (_behaviour.ChatHistory.Count <= messagesToSummarize)
+            int toConsume = ConversationMemory.MessagesToSummarize;
+            if (_behaviour.ChatHistory.Count <= toConsume)
             {
                 _isSummarizing = false;
                 yield break;
             }
 
-            StringBuilder textToSummarize = new StringBuilder();
-            int counted = 0;
-            for (int i = 0; i < _behaviour.ChatHistory.Count && counted < messagesToSummarize; i++)
-            {
-                var msg = _behaviour.ChatHistory[i];
-                if (msg.IsSystem) continue;
-                textToSummarize.AppendLine((msg.IsUser ? "Player: " : "Model: ") + msg.Text);
-                counted++;
-            }
+            string prompt = ConversationMemory.BuildSummarizationPrompt(
+                _behaviour.ChatSummary, _behaviour.ChatHistory, toConsume);
 
             string url = $"https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-lite-latest:generateContent?key={_behaviour.ApiKey}";
-            string currentSummary = _behaviour.ChatSummary;
-            
-            string sysPrompt = "Summarize the key events and context of this conversation briefly in English. Combine it with the previous summary if provided.";
-            string prompt = (string.IsNullOrEmpty(currentSummary) ? "" : $"Previous Summary: {currentSummary}\n\n") + $"New Chat Messages to summarize:\n{textToSummarize.ToString()}";
 
-            string bodyStr = $"{{\"system_instruction\":{{\"parts\":[{{\"text\":\"{EscapeJson(sysPrompt)}\"}}]}},\"contents\":[{{\"role\":\"user\",\"parts\":[{{\"text\":\"{EscapeJson(prompt)}\"}}]}}],\"generationConfig\":{{\"maxOutputTokens\":512}}}}";
+            string bodyStr = $"{{\"system_instruction\":{{\"parts\":[{{\"text\":\"{EscapeJson(ConversationMemory.SummarizationInstruction)}\"}}]}},\"contents\":[{{\"role\":\"user\",\"parts\":[{{\"text\":\"{EscapeJson(prompt)}\"}}]}}],\"generationConfig\":{{\"maxOutputTokens\":512}}}}";
 
             byte[] bodyBytes = Encoding.UTF8.GetBytes(bodyStr);
             UnityWebRequest request = new UnityWebRequest(url, "POST");
             request.uploadHandler = new UploadHandlerRaw(bodyBytes);
             request.downloadHandler = new DownloadHandlerBuffer();
             request.SetRequestHeader("Content-Type", "application/json");
+            request.timeout = 20;
 
             yield return request.SendWebRequest();
 
@@ -136,29 +127,10 @@ namespace DialogInterceptorMod.API
             string rawResponse = request.downloadHandler.text;
             string aiText = ExtractResponseText(rawResponse);
 
-            if (!string.IsNullOrEmpty(aiText))
+            if (!string.IsNullOrEmpty(aiText) && _behaviour.Memory != null)
             {
                 _behaviour.ChatSummary = aiText.Trim();
-                if (_behaviour.Memory != null)
-                {
-                    _behaviour.Memory.Summary = _behaviour.ChatSummary;
-                    _behaviour.Memory.Save();
-                }
-                // Remove the oldest non-system messages
-                int removed = 0;
-                while (removed < messagesToSummarize && _behaviour.ChatHistory.Count > 0)
-                {
-                    if (!_behaviour.ChatHistory[0].IsSystem)
-                    {
-                        _behaviour.ChatHistory.RemoveAt(0);
-                        removed++;
-                    }
-                    else
-                    {
-                        _behaviour.ChatHistory.RemoveAt(0);
-                    }
-                }
-                Plugin.Log.LogInfo($"Summary updated. Remaining messages: {_behaviour.ChatHistory.Count}");
+                _behaviour.Memory.ApplySummaryResult(aiText, _behaviour.ChatHistory, toConsume);
             }
             _isSummarizing = false;
         }

@@ -48,9 +48,17 @@ namespace DialogInterceptorMod.Core
         public float TalkMaxPoints;
         public bool IsRandomCharacter;
 
-        // Navigation and routine state
+        // Navigation, routine, and scene state
         public bool IsFollowing;
         public string CurrentTaskName = "";
+        public string CurrentScene = "";
+
+        // Time and day awareness
+        public int GameHour;
+        public int GameMinute;
+        public int GameDay;
+        public bool IsNight;
+        public string DayPeriod = ""; // morning, afternoon, evening, night
 
         // Clothing states (Slot name -> is equipped/visible)
         public Dictionary<string, bool> AvailableClothes = new Dictionary<string, bool>();
@@ -65,6 +73,35 @@ namespace DialogInterceptorMod.Core
         {
             var snapshot = new CharacterContextSnapshot();
             snapshot.Name = charName;
+            try
+            {
+                snapshot.CurrentScene = UnityEngine.SceneManagement.SceneManager.GetActiveScene().name;
+            }
+            catch { }
+
+            // Time awareness: read from the in-game TimeManager
+            try
+            {
+                var timeManager = UnityEngine.Object.FindFirstObjectByType<TimeManager>();
+                if (timeManager != null)
+                {
+                    snapshot.GameHour = Mathf.FloorToInt(timeManager.hour);
+                    snapshot.GameMinute = Mathf.FloorToInt(timeManager.minute);
+                    snapshot.GameDay = timeManager.CurrentDay;
+                    snapshot.IsNight = timeManager.isLateNight;
+
+                    int h = snapshot.GameHour;
+                    if (h >= 5 && h < 12)
+                        snapshot.DayPeriod = "morning";
+                    else if (h >= 12 && h < 17)
+                        snapshot.DayPeriod = "afternoon";
+                    else if (h >= 17 && h < 21)
+                        snapshot.DayPeriod = "evening";
+                    else
+                        snapshot.DayPeriod = "night";
+                }
+            }
+            catch { }
 
             if (emotions != null)
             {
@@ -180,6 +217,17 @@ namespace DialogInterceptorMod.Core
 
             var sb = new StringBuilder();
             sb.AppendLine($"[CHARACTER] {Name}");
+            if (!string.IsNullOrEmpty(CurrentScene))
+                sb.AppendLine($"[LOCATION] Current Scene / Map: {CurrentScene}");
+
+            // Time context
+            if (GameHour > 0 || GameMinute > 0 || GameDay > 0)
+            {
+                string timeStr = $"{GameHour:D2}:{GameMinute:D2}";
+                string periodStr = !string.IsNullOrEmpty(DayPeriod) ? $" ({DayPeriod})" : "";
+                string nightStr = IsNight ? " [IT IS NIGHTTIME]" : "";
+                sb.AppendLine($"[TIME] Day {GameDay}, {timeStr}{periodStr}{nightStr}");
+            }
 
             // Who she is: the game has four main characters living in this house (Katherine, Susan,
             // Stacy, and Laura) and the rest are secondary women of the neighbourhood.

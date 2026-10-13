@@ -21,11 +21,6 @@ namespace DialogInterceptorMod.Core
         /// <summary>File name of the editable extra rules file, inside <see cref="ConfigDir"/>.</summary>
         public const string CustomPromptFileName = "custom_prompt.txt";
 
-        /// <summary>
-        /// File name of the optional extra places file, inside <see cref="ConfigDir"/>:
-        /// "name = x,y,z[,animation]" lines adding destinations for the goto command.
-        /// </summary>
-        public const string LocationsFileName = "locations.txt";
 
         /// <summary>Per-character memory folder, inside <see cref="ConfigDir"/>.</summary>
         public const string MemoryDirName = "memory";

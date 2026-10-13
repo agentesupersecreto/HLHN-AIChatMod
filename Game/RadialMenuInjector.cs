@@ -41,6 +41,7 @@ namespace DialogInterceptorMod.Game
                 if (existing != null)
                 {
                     existing.gameObject.SetActive(inRangeForTalk);
+                    ConfigureAIButtonAppearance(existing.gameObject);
                     return;
                 }
 
@@ -56,20 +57,13 @@ namespace DialogInterceptorMod.Game
                 GameObject aiBtnObj = UnityEngine.Object.Instantiate(sourceButton, radialRoot, false);
                 aiBtnObj.name = BUTTON_NAME;
 
+                // Configure appearance: hide speech bubble icon and display "AI" text
+                ConfigureAIButtonAppearance(aiBtnObj);
+
                 // Configure ButtonDescription (used by ButtonChecker to show description in center)
                 var desc = aiBtnObj.GetComponent<ButtonDescription>();
                 if (desc == null) desc = aiBtnObj.AddComponent<ButtonDescription>();
                 desc.Description = BUTTON_LABEL;
-
-                // Update any text components if present on the button
-                foreach (var tmp in aiBtnObj.GetComponentsInChildren<TMP_Text>(true))
-                {
-                    tmp.text = BUTTON_LABEL;
-                }
-                foreach (var txt in aiBtnObj.GetComponentsInChildren<Text>(true))
-                {
-                    txt.text = BUTTON_LABEL;
-                }
 
                 // Configure button onClick listener
                 var btnComp = aiBtnObj.GetComponent<Button>();
@@ -95,7 +89,7 @@ namespace DialogInterceptorMod.Game
                 }
 
                 aiBtnObj.SetActive(inRangeForTalk);
-                Plugin.LogInfo($"Injected '{BUTTON_LABEL}' button into InteractionMenu radial container.");
+                Plugin.LogInfo($"Injected '{BUTTON_LABEL}' button into InteractionMenu radial container with 'AI' label.");
             }
             catch (Exception ex)
             {
@@ -211,6 +205,62 @@ namespace DialogInterceptorMod.Game
             catch (Exception ex)
             {
                 Plugin.LogError($"RadialMenuInjector.OnAIChatClicked error: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Replaces the speech bubble icon on the button with centered "AI" text.
+        /// </summary>
+        private static void ConfigureAIButtonAppearance(GameObject btnObj)
+        {
+            if (btnObj == null) return;
+
+            // 1. Hide the "Talk About" icon (disable any child Image / RawImage)
+            var rootImage = btnObj.GetComponent<Image>();
+            foreach (Transform child in btnObj.transform)
+            {
+                if (child.name == "AILabel") continue;
+
+                var childImg = child.GetComponent<Image>();
+                if (childImg != null) childImg.enabled = false;
+
+                var childRaw = child.GetComponent<RawImage>();
+                if (childRaw != null) childRaw.enabled = false;
+            }
+
+            // 2. Add or update the centered "AI" text label
+            Transform labelTransform = btnObj.transform.Find("AILabel");
+            TMP_Text label = null;
+            if (labelTransform != null)
+            {
+                label = labelTransform.GetComponent<TMP_Text>();
+            }
+            else
+            {
+                GameObject labelObj = new GameObject("AILabel", typeof(RectTransform));
+                labelObj.transform.SetParent(btnObj.transform, false);
+
+                RectTransform rt = labelObj.GetComponent<RectTransform>();
+                rt.anchorMin = Vector2.zero;
+                rt.anchorMax = Vector2.one;
+                rt.offsetMin = Vector2.zero;
+                rt.offsetMax = Vector2.zero;
+                rt.pivot = new Vector2(0.5f, 0.5f);
+                rt.anchoredPosition = Vector2.zero;
+                rt.sizeDelta = Vector2.zero;
+
+                label = labelObj.AddComponent<TextMeshProUGUI>();
+            }
+
+            if (label != null)
+            {
+                label.text = "AI";
+                label.alignment = TextAlignmentOptions.Center;
+                label.fontSize = 26;
+                label.fontStyle = FontStyles.Bold;
+                label.color = new Color(0.12f, 0.12f, 0.12f, 1f);
+                label.raycastTarget = false;
+                label.gameObject.SetActive(true);
             }
         }
     }

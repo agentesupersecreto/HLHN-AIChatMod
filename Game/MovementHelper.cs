@@ -12,7 +12,7 @@ namespace DialogInterceptorMod.Game
     {
         /// <summary>
         /// Returns a comma-separated list of the places the current NPC can be sent to, based on the
-        /// routine chores of the NPC and on the user-defined places in locations.txt.
+        /// routine chores and placed spots of the NPC.
         /// </summary>
         public static string GetAvailableGoToTargets()
         {

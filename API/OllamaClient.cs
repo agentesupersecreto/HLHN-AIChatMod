@@ -105,7 +105,7 @@ namespace DialogInterceptorMod.API
             AIResponseProcessor.ProcessResponse(aiText, _behaviour, "Ollama");
             _behaviour.Window.AwaitingResponse = false;
 
-            if (_behaviour.ChatHistory.Count > 10 && !_isSummarizing)
+            if (_behaviour.ChatHistory.Count > ConversationMemory.SummarizeThreshold && !_isSummarizing)
             {
                 _behaviour.StartCoroutine(GenerateSummaryAndClean());
             }
@@ -116,22 +116,15 @@ namespace DialogInterceptorMod.API
             if (_isSummarizing) yield break;
             _isSummarizing = true;
 
-            int messagesToSummarize = 6;
-            if (_behaviour.ChatHistory.Count <= messagesToSummarize)
+            int toConsume = ConversationMemory.MessagesToSummarize;
+            if (_behaviour.ChatHistory.Count <= toConsume)
             {
                 _isSummarizing = false;
                 yield break;
             }
 
-            StringBuilder textToSummarize = new StringBuilder();
-            int counted = 0;
-            for (int i = 0; i < _behaviour.ChatHistory.Count && counted < messagesToSummarize; i++)
-            {
-                var msg = _behaviour.ChatHistory[i];
-                if (msg.IsSystem) continue;
-                textToSummarize.AppendLine((msg.IsUser ? "Player: " : "Model: ") + msg.Text);
-                counted++;
-            }
+            string prompt = ConversationMemory.BuildSummarizationPrompt(
+                _behaviour.ChatSummary, _behaviour.ChatHistory, toConsume);
 
             string url = _behaviour.OllamaUrl;
             if (url.EndsWith("/api/generate"))
@@ -139,11 +132,7 @@ namespace DialogInterceptorMod.API
             else if (!url.EndsWith("/api/chat"))
                 url = url.TrimEnd('/') + "/api/chat";
 
-            string currentSummary = _behaviour.ChatSummary;
-            string sysPrompt = "Summarize the key events and context of this conversation briefly in English (max 2-3 sentences). Combine it with the previous summary if provided.";
-            string prompt = (string.IsNullOrEmpty(currentSummary) ? "" : $"Previous Summary: {currentSummary}\n\n") + $"New Chat Messages to summarize:\n{textToSummarize}";
-
-            string body = $"{{\"model\":\"{JsonHelper.EscapeJson(_behaviour.OllamaModel)}\",\"messages\":[{{\"role\":\"system\",\"content\":\"{JsonHelper.EscapeJson(sysPrompt)}\"}},{{\"role\":\"user\",\"content\":\"{JsonHelper.EscapeJson(prompt)}\"}}],\"stream\":false,\"options\":{{\"num_ctx\":4096,\"num_predict\":150}}}}";
+            string body = $"{{\"model\":\"{JsonHelper.EscapeJson(_behaviour.OllamaModel)}\",\"messages\":[{{\"role\":\"system\",\"content\":\"{JsonHelper.EscapeJson(ConversationMemory.SummarizationInstruction)}\"}},{{\"role\":\"user\",\"content\":\"{JsonHelper.EscapeJson(prompt)}\"}}],\"stream\":false,\"options\":{{\"num_ctx\":4096,\"num_predict\":150}}}}";
 
             byte[] bodyBytes = Encoding.UTF8.GetBytes(body);
             UnityWebRequest request = new UnityWebRequest(url, "POST");
@@ -170,28 +159,10 @@ namespace DialogInterceptorMod.API
                     aiText = ExtractDialogueFromThinking(thinking);
             }
 
-            if (!string.IsNullOrEmpty(aiText))
+            if (!string.IsNullOrEmpty(aiText) && _behaviour.Memory != null)
             {
                 _behaviour.ChatSummary = aiText.Trim();
-                if (_behaviour.Memory != null)
-                {
-                    _behaviour.Memory.Summary = _behaviour.ChatSummary;
-                    _behaviour.Memory.Save();
-                }
-                int removed = 0;
-                while (removed < messagesToSummarize && _behaviour.ChatHistory.Count > 0)
-                {
-                    if (!_behaviour.ChatHistory[0].IsSystem)
-                    {
-                        _behaviour.ChatHistory.RemoveAt(0);
-                        removed++;
-                    }
-                    else
-                    {
-                        _behaviour.ChatHistory.RemoveAt(0);
-                    }
-                }
-                Plugin.Log.LogInfo($"Ollama summary updated. Remaining messages: {_behaviour.ChatHistory.Count}");
+                _behaviour.Memory.ApplySummaryResult(aiText, _behaviour.ChatHistory, toConsume);
             }
             _isSummarizing = false;
         }

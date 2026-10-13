@@ -225,7 +225,7 @@ namespace DialogInterceptorMod.Game
                     _showDialogue.NpcName.text = SpeakerName;
 
                 if (_showDialogue.text != null)
-                    _showDialogue.text.text = $"{sentText}\n<size=80%><color=#888888>[...] Esperando respuesta...</color></size>";
+                    _showDialogue.text.text = $"{sentText}\n<size=80%><color=#888888>[...] Waiting for response...</color></size>";
 
                 _showDialogue.showing = true;
             }

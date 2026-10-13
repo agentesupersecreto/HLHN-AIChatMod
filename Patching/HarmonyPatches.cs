@@ -265,5 +265,64 @@ namespace DialogInterceptorMod.Patching
                 return true;
             }
         }
+
+        // ═══════════════════════════════════════════════════════════
+        //  PATCH 8: Inject "AI chat mod" tutorial in TutorialForMenu
+        // ═══════════════════════════════════════════════════════════
+
+        [HarmonyPatch(typeof(TutorialForMenu), "Start")]
+        public static class TutorialForMenu_Start_Patch
+        {
+            static void Prefix(TutorialForMenu __instance)
+            {
+                try
+                {
+                    Game.TutorialInjector.OnTutorialMenuStartPrefix(__instance);
+                }
+                catch (Exception ex)
+                {
+                    Plugin.LogError($"[TutorialForMenu.Start Prefix] {ex.Message}");
+                }
+            }
+        }
+
+        [HarmonyPatch(typeof(TutorialForMenu), "OnEnable")]
+        public static class TutorialForMenu_OnEnable_Patch
+        {
+            static void Postfix(TutorialForMenu __instance)
+            {
+                try
+                {
+                    Game.TutorialInjector.OnTutorialMenuEnablePostfix(__instance);
+                }
+                catch (Exception ex)
+                {
+                    Plugin.LogError($"[TutorialForMenu.OnEnable Postfix] {ex.Message}");
+                }
+            }
+        }
+
+        // ═══════════════════════════════════════════════════════════
+        //  PATCH 9: Dynamic image aspect ratio on tutorial page flip
+        // ═══════════════════════════════════════════════════════════
+
+        [HarmonyPatch(typeof(ImageTutorial), "Show")]
+        public static class ImageTutorial_Show_Patch
+        {
+            static void Postfix(ImageTutorial __instance)
+            {
+                try
+                {
+                    if (__instance != null && __instance.gameObject.name == Game.TutorialInjector.TUTORIAL_NAME)
+                    {
+                        Game.TutorialInjector.AdjustImageSizeForCurrentTexture(__instance);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Plugin.LogDebug($"[ImageTutorial.Show Postfix] {ex.Message}");
+                }
+            }
+        }
     }
 }

@@ -766,27 +766,8 @@ namespace DialogInterceptorMod.UI
             GUILayout.EndHorizontal();
 
             GUILayout.BeginHorizontal();
-            if (GUILayout.Button("Dump locations", ChatStyles.ButtonStyle))
-            {
-                string path = db.CurrentNavigator != null
-                    ? Game.LocationCatalog.Dump(db.CurrentNavigator)
-                    : null;
-                SetStatus(path != null
-                    ? "Places written to BepInEx/config/AIChat/locations_dump.txt"
-                    : "Could not write locations_dump.txt (no NPC tracked).", path == null);
-            }
             if (GUILayout.Button("List places", ChatStyles.ButtonStyle))
                 SetStatus(Game.NpcGoToHandler.ListPlaces(), false);
-            GUILayout.EndHorizontal();
-
-            GUILayout.BeginHorizontal();
-            if (GUILayout.Button("Dump animations", ChatStyles.ButtonStyle))
-            {
-                string path = Game.AnimationCatalog.Dump();
-                SetStatus(path != null
-                    ? "Animations written to BepInEx/config/AIChat/animations_dump.txt"
-                    : "Could not write animations_dump.txt.", path == null);
-            }
             GUILayout.EndHorizontal();
         }
 

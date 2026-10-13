@@ -135,7 +135,7 @@ namespace DialogInterceptorMod.Game
 
         /// <summary>
         /// Guidance for "take me / go to a place" requests. The place names come from the game's own
-        /// routine chores (plus locations.txt), because the model cannot guess how the house names
+        /// routine chores and placed spots, because the model cannot guess how the house names
         /// its spots. Movement is gated by the same trust value as following.
         /// </summary>
         private static string BuildGoToGuidance(string userMessage, CharacterContextSnapshot snapshot)
@@ -145,18 +145,22 @@ namespace DialogInterceptorMod.Game
             string phrase = PlaceMatcher.ExtractPlacePhrase(userMessage);
             bool meetsThreshold = snapshot.Trust >= snapshot.ValueToFollow;
 
+            string sceneName = !string.IsNullOrEmpty(snapshot.CurrentScene)
+                ? snapshot.CurrentScene
+                : UnityEngine.SceneManagement.SceneManager.GetActiveScene().name;
+
             sb.AppendLine(wantsList
-                ? "\n[DETECTED PLAYER REQUEST: WHERE CAN YOU GO]"
-                : "\n[DETECTED PLAYER REQUEST: GO SOMEWHERE IN THE HOUSE]");
+                ? $"\n[DETECTED PLAYER REQUEST: WHERE CAN YOU GO (Current Map: {sceneName})]"
+                : $"\n[DETECTED PLAYER REQUEST: GO SOMEWHERE (Current Map: {sceneName})]");
 
             if (!string.IsNullOrEmpty(phrase))
                 sb.AppendLine($"- Place the player seems to be asking for: \"{phrase}\"");
 
             string places = GetKnownPlaces();
             if (!string.IsNullOrEmpty(places))
-                sb.AppendLine($"- Places available in this house right now: {places}");
+                sb.AppendLine($"- Places/chores available in {sceneName} right now: {places}");
             else
-                sb.AppendLine("- No place list available (no NPC tracked right now).");
+                sb.AppendLine($"- No place list available (no routine spots for this NPC in '{sceneName}').");
 
             sb.AppendLine($"- Required Trust threshold for going somewhere on his word: {snapshot.ValueToFollow:F0} (Your Trust: {snapshot.Trust:F0} -> {(meetsThreshold ? "MEETS THRESHOLD" : "BELOW THRESHOLD")})");
             sb.AppendLine($"- Submission: {snapshot.Submission}, Desire: {snapshot.Desire}");
@@ -180,7 +184,7 @@ namespace DialogInterceptorMod.Game
             try
             {
                 // The list is the AI's menu: the houses expose around twenty places, so the cap is
-                // only a guard against a pathological locations.txt.
+                // a guard against overly long prompt size.
                 string list = MovementHelper.GetAvailableGoToTargets();
                 if (string.IsNullOrEmpty(list)) return "";
                 return list.Length > 700 ? list.Substring(0, 700) : list;

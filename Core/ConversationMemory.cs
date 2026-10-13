@@ -288,5 +288,69 @@ namespace DialogInterceptorMod.Core
 
             return sb.ToString();
         }
+
+        // --- Centralized Summarization (Sliding Window + Summary) ---
+
+        /// <summary>Number of history messages that triggers a summarization pass.</summary>
+        public const int SummarizeThreshold = 10;
+
+        /// <summary>Number of oldest non-system messages consumed per summarization pass.</summary>
+        public const int MessagesToSummarize = 6;
+
+        /// <summary>System instruction sent to the AI for the summarization sub-request.</summary>
+        public const string SummarizationInstruction =
+            "Summarize the key events and context of this conversation briefly in English (max 2-3 sentences). " +
+            "Combine it with the previous summary if provided. Focus on relationship progress, emotional shifts, " +
+            "and any important decisions or actions.";
+
+        /// <summary>
+        /// Builds the user-side prompt for a summarization request, combining the existing summary
+        /// with the oldest messages that are about to be pruned.
+        /// </summary>
+        public static string BuildSummarizationPrompt(string currentSummary, System.Collections.Generic.List<Models.ChatMessage> history, int messagesToConsume)
+        {
+            var sb = new System.Text.StringBuilder();
+            if (!string.IsNullOrEmpty(currentSummary))
+                sb.AppendLine($"Previous Summary: {currentSummary}\n");
+
+            sb.AppendLine("New Chat Messages to summarize:");
+            int counted = 0;
+            for (int i = 0; i < history.Count && counted < messagesToConsume; i++)
+            {
+                var msg = history[i];
+                if (msg.IsSystem) continue;
+                sb.AppendLine((msg.IsUser ? "Player: " : "Model: ") + msg.Text);
+                counted++;
+            }
+            return sb.ToString();
+        }
+
+        /// <summary>
+        /// Applies the AI-generated summary and removes the consumed messages from the history.
+        /// Called by any API client after its summarization request succeeds.
+        /// </summary>
+        public void ApplySummaryResult(string summaryText, System.Collections.Generic.List<Models.ChatMessage> history, int messagesToConsume)
+        {
+            if (string.IsNullOrEmpty(summaryText)) return;
+
+            Summary = summaryText.Trim();
+            Save();
+
+            int removed = 0;
+            while (removed < messagesToConsume && history.Count > 0)
+            {
+                if (!history[0].IsSystem)
+                {
+                    history.RemoveAt(0);
+                    removed++;
+                }
+                else
+                {
+                    history.RemoveAt(0);
+                }
+            }
+
+            Plugin.LogInfo($"Summary updated for {CharacterName}. Pruned {removed} messages, {history.Count} remaining.");
+        }
     }
 }
