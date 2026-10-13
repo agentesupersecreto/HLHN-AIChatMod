@@ -53,6 +53,10 @@ namespace DialogInterceptorMod.Core
         public bool CmdMakeFaceEnabled    = true;
         public bool CmdSayEnabled         = true;
 
+        // --- Native Dialogue Box Input ---
+        public bool NativeDialogueInputEnabled = true;
+        public string NativeSpeakerName        = "You";
+
         // --- Spam Filter ---
         public SpamFilter SpamFilter { get; private set; } = new SpamFilter();
 
@@ -108,6 +112,7 @@ namespace DialogInterceptorMod.Core
             _chatMenuDummy.SetActive(false);
 
             Window = new ChatWindow(this);
+            Game.NativeDialogueInputHandler.Init();
 
             // Creates BepInEx/config/AIChat/{system_prompt,custom_prompt,locations}.txt on first run
             PromptBuilder.EnsurePromptFiles();
@@ -261,7 +266,7 @@ namespace DialogInterceptorMod.Core
                     }
                 }
 
-                if (!otherMenuActive)
+                if (!otherMenuActive && (Game.NativeDialogueInputHandler.Instance == null || !Game.NativeDialogueInputHandler.Instance.IsInputActive))
                 {
                     if (_notMove != null)
                     {
@@ -273,10 +278,63 @@ namespace DialogInterceptorMod.Core
             }
         }
 
+        /// <summary>
+        /// Explicitly binds the targeted NPC (e.g. from the radial menu) as the active conversational partner.
+        /// </summary>
+        public void SetTargetNpc(NpcNavigatorAndRutines nav)
+        {
+            if (nav == null) return;
+            var speach = nav.GetComponent<Speach>();
+            if (speach == null) return;
+
+            string npcName = speach.transform.name;
+            _noNpcTimer = 0f;
+
+            if (npcName != _lastCharName)
+            {
+                if (!string.IsNullOrEmpty(_lastCharName))
+                {
+                    Memory.Summary = ChatSummary;
+                    Memory.Save();
+                    ChatHistory.Clear();
+                    ChatSummary = "";
+                    Plugin.LogInfo($"Character changed via radial menu: {_lastCharName} → {npcName}. History cleared.");
+                }
+
+                _lastCharName = npcName;
+                Memory = new ConversationMemory();
+                Memory.Bind(npcName);
+                Memory.Load();
+                ChatSummary = Memory.Summary;
+            }
+
+            CurrentCharName = npcName;
+            CurrentSpeach = speach;
+            CurrentEmotions = speach.GetComponent<Emotions>();
+            CurrentTalkInteractions = speach.GetComponent<TalkInteractions>();
+            CurrentNavigator = nav;
+            CurrentInteractionManager = speach.GetComponent<NpcInteractionManager>();
+
+            if (CurrentEmotions != null)
+            {
+                Memory.UpdateMilestones(CurrentEmotions, CurrentInteractionManager);
+            }
+        }
+
+        public void SetChatMenuDummyActive(bool active)
+        {
+            RefreshNotMove();
+            if (_chatMenuDummy != null)
+            {
+                _chatMenuDummy.SetActive(active);
+            }
+        }
+
         private void Update()
         {
             RefreshNotMove();
             Window.HandleUpdate();
+            Game.NativeDialogueInputHandler.Instance?.HandleUpdate();
 
             // Refresh current NPC binding from SpeachListener
             RefreshCurrentNpc();
@@ -421,6 +479,14 @@ namespace DialogInterceptorMod.Core
         {
             if (string.IsNullOrEmpty(text)) return;
 
+            if (NativeDialogueInputEnabled && Game.NativeDialogueInputHandler.Instance != null)
+            {
+                Game.NativeDialogueInputHandler.Instance.ShowNpcSpeech(CurrentCharName, text);
+                return;
+            }
+
+            Game.NativeDialogueInputHandler.Instance?.OnAIResponseReady();
+
             if (CurrentSpeach != null)
             {
                 if (_aiSpeechRoutine != null)
@@ -498,7 +564,7 @@ namespace DialogInterceptorMod.Core
 
         private void LateUpdate()
         {
-            if (Window != null && Window.IsVisible)
+            if ((Window != null && Window.IsVisible) || (Game.NativeDialogueInputHandler.Instance != null && Game.NativeDialogueInputHandler.Instance.IsInputActive))
             {
                 Cursor.visible = true;
                 Cursor.lockState = CursorLockMode.None;
@@ -507,7 +573,7 @@ namespace DialogInterceptorMod.Core
 
         private void OnGUI()
         {
-            if (Window != null && Window.IsVisible)
+            if ((Window != null && Window.IsVisible) || (Game.NativeDialogueInputHandler.Instance != null && Game.NativeDialogueInputHandler.Instance.IsInputActive))
             {
                 Cursor.visible = true;
                 Cursor.lockState = CursorLockMode.None;

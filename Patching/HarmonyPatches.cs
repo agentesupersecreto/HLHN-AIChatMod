@@ -164,5 +164,106 @@ namespace DialogInterceptorMod.Patching
                 }
             }
         }
+
+        // ═══════════════════════════════════════════════════════════
+        //  PATCH 6: Intercept InteractionMenu to inject "AI chat" button
+        // ═══════════════════════════════════════════════════════════
+
+        [HarmonyPatch(typeof(InteractionMenu), "Start")]
+        public static class InteractionMenu_Start_Patch
+        {
+            static void Postfix(InteractionMenu __instance)
+            {
+                Game.RadialMenuInjector.EnsureAIChatButton(__instance);
+            }
+        }
+
+        [HarmonyPatch(typeof(InteractionMenu), "Active")]
+        public static class InteractionMenu_Active_Patch
+        {
+            static void Postfix(InteractionMenu __instance)
+            {
+                Game.RadialMenuInjector.EnsureAIChatButton(__instance);
+            }
+        }
+
+        [HarmonyPatch(typeof(InteractionMenu), "ActiveOnlyTalkOptions")]
+        public static class InteractionMenu_ActiveOnlyTalkOptions_Patch
+        {
+            static void Postfix(InteractionMenu __instance)
+            {
+                Game.RadialMenuInjector.EnsureAIChatButton(__instance);
+            }
+        }
+
+        // ═══════════════════════════════════════════════════════════
+        //  PATCH 7: Suppress 'E' key while typing / conversing
+        // ═══════════════════════════════════════════════════════════
+
+        [HarmonyPatch(typeof(InteractionMenu), "Update")]
+        public static class InteractionMenu_Update_Patch
+        {
+            static bool Prefix(InteractionMenu __instance)
+            {
+                bool isDialogueActive = false;
+
+                if (Game.NativeDialogueInputHandler.Instance != null &&
+                    (Game.NativeDialogueInputHandler.Instance.IsInputActive ||
+                     Game.NativeDialogueInputHandler.Instance.IsWaitingForAI ||
+                     Game.NativeDialogueInputHandler.Instance.IsNpcSpeaking))
+                {
+                    isDialogueActive = true;
+                }
+
+                if (DialogBehaviour.Instance?.Window != null && DialogBehaviour.Instance.Window.IsVisible)
+                {
+                    isDialogueActive = true;
+                }
+
+                if (isDialogueActive)
+                {
+                    // Keep the radial menu closed while typing or conversing
+                    if (__instance.transform.childCount > 0 && __instance.transform.GetChild(0).gameObject.activeSelf)
+                    {
+                        __instance.transform.GetChild(0).gameObject.SetActive(false);
+                        __instance.MenuIsActive = false;
+                    }
+
+                    // Hide the floating "E to interact" prompt while dialogue is active
+                    var shower = Traverse.Create(__instance).Field<InteractionsShower>("shower").Value;
+                    if (shower != null)
+                    {
+                        shower.NpcInteract = false;
+                    }
+
+                    // Skip Update so KeyCode.E does NOT trigger radial menu while typing
+                    return false;
+                }
+
+                return true;
+            }
+        }
+
+        [HarmonyPatch(typeof(DoorInteractor), "Update")]
+        public static class DoorInteractor_Update_Patch
+        {
+            static bool Prefix()
+            {
+                if (Game.NativeDialogueInputHandler.Instance != null &&
+                    (Game.NativeDialogueInputHandler.Instance.IsInputActive ||
+                     Game.NativeDialogueInputHandler.Instance.IsWaitingForAI ||
+                     Game.NativeDialogueInputHandler.Instance.IsNpcSpeaking))
+                {
+                    return false;
+                }
+
+                if (DialogBehaviour.Instance?.Window != null && DialogBehaviour.Instance.Window.IsVisible)
+                {
+                    return false;
+                }
+
+                return true;
+            }
+        }
     }
 }

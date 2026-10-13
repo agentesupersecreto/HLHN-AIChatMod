@@ -62,6 +62,8 @@ namespace DialogInterceptorMod.UI
         private ProviderType _editProvider;
         private string _editGemmaUrl;
         private string _editGemmaModel;
+        private bool _editNativeDialogueInput;
+        private string _editNativeSpeakerName = "You";
 
         // Hotkey editing
         private bool _listeningForKey = false;
@@ -87,9 +89,13 @@ namespace DialogInterceptorMod.UI
             _editApiKey      = _behaviour.ApiKey;
             _editProvider    = _behaviour.Provider;
             _editHotkeyDisplay = _behaviour.ChatHotkey.ToString();
+            _editNativeDialogueInput = _behaviour.NativeDialogueInputEnabled;
+            _editNativeSpeakerName   = _behaviour.NativeSpeakerName;
 
             LoadConfig();
         }
+
+        public void SetInputText(string text) => _inputText = text ?? "";
 
         // ═══════════════════════════════════════════════════════════
         //  Positioning
@@ -395,6 +401,25 @@ namespace DialogInterceptorMod.UI
 
             // Input
             GUILayout.Space(4);
+
+            if (_behaviour.NativeDialogueInputEnabled)
+            {
+                var nativeHandler = Game.NativeDialogueInputHandler.Instance;
+                bool isNativeActive = nativeHandler != null && nativeHandler.IsInputActive;
+
+                GUILayout.BeginHorizontal();
+                string statusBtn = isNativeActive 
+                    ? "[Diálogo nativo activo (escribiendo...)]" 
+                    : $"[Abrir diálogo nativo ({_behaviour.NativeSpeakerName})]";
+                if (GUILayout.Button(statusBtn, isNativeActive ? ChatStyles.ActiveButtonStyle : ChatStyles.ButtonStyle))
+                {
+                    if (isNativeActive) nativeHandler.CancelInput(closeBox: true);
+                    else nativeHandler.StartInput();
+                }
+                GUILayout.EndHorizontal();
+                GUILayout.Space(2);
+            }
+
             GUILayout.BeginHorizontal();
 
             bool enterPressed = Event.current.type == EventType.KeyDown &&
@@ -402,7 +427,15 @@ namespace DialogInterceptorMod.UI
                                GUI.GetNameOfFocusedControl() == "ChatInput";
 
             GUI.SetNextControlName("ChatInput");
+            string prevInput = _inputText;
             _inputText = GUILayout.TextField(_inputText, ChatStyles.InputStyle, GUILayout.ExpandWidth(true));
+
+            // Sync with NativeDialogueInputHandler if user is typing in IMGUI
+            if (_behaviour.NativeDialogueInputEnabled && _inputText != prevInput && Game.NativeDialogueInputHandler.Instance != null)
+            {
+                Game.NativeDialogueInputHandler.Instance.CurrentInput = _inputText;
+                Game.NativeDialogueInputHandler.Instance.UpdateDialogueText();
+            }
 
             if (_focusInputPending)
             {
@@ -415,7 +448,16 @@ namespace DialogInterceptorMod.UI
                            !string.IsNullOrEmpty(_behaviour.CurrentCharName);
 
             if ((GUILayout.Button("Send", canSend ? ChatStyles.ActiveButtonStyle : ChatStyles.ButtonStyle, GUILayout.Width(60)) || enterPressed) && canSend)
-                SendMessage();
+            {
+                if (Game.NativeDialogueInputHandler.Instance != null && Game.NativeDialogueInputHandler.Instance.IsInputActive)
+                {
+                    Game.NativeDialogueInputHandler.Instance.SubmitInput();
+                }
+                else
+                {
+                    SendMessage();
+                }
+            }
 
             GUILayout.EndHorizontal();
 
@@ -527,6 +569,15 @@ namespace DialogInterceptorMod.UI
             DrawCmdToggle("Make face",         ref _behaviour.CmdMakeFaceEnabled);
             DrawCmdToggle("Force say",         ref _behaviour.CmdSayEnabled);
 
+            GUILayout.Space(6);
+            GUILayout.Label("Native Dialogue Box Input:", ChatStyles.SectionStyle);
+            DrawCmdToggle("Native Dialogue", ref _editNativeDialogueInput);
+
+            GUILayout.BeginHorizontal();
+            GUILayout.Label("Speaker Name:", ChatStyles.DebugLabelStyle, GUILayout.Width(140));
+            _editNativeSpeakerName = GUILayout.TextField(_editNativeSpeakerName, ChatStyles.InputStyle, GUILayout.Width(100));
+            GUILayout.EndHorizontal();
+
             GUILayout.Space(8);
             if (GUILayout.Button("Apply & Save", ChatStyles.ActiveButtonStyle))
             {
@@ -536,6 +587,13 @@ namespace DialogInterceptorMod.UI
                 _behaviour.GemmaUrl    = _editGemmaUrl;
                 _behaviour.GemmaModel  = _editGemmaModel;
                 _behaviour.ApiKey      = _editApiKey;
+                _behaviour.NativeDialogueInputEnabled = _editNativeDialogueInput;
+                _behaviour.NativeSpeakerName = string.IsNullOrWhiteSpace(_editNativeSpeakerName) ? "You" : _editNativeSpeakerName.Trim();
+                if (Game.NativeDialogueInputHandler.Instance != null)
+                {
+                    Game.NativeDialogueInputHandler.Instance.Enabled = _behaviour.NativeDialogueInputEnabled;
+                    Game.NativeDialogueInputHandler.Instance.SpeakerName = _behaviour.NativeSpeakerName;
+                }
                 _behaviour.RebuildApiClient();
                 SaveConfig();
                 SetStatus("Settings saved to BepInEx/config!", false);
@@ -763,9 +821,9 @@ namespace DialogInterceptorMod.UI
         //  Send / Scroll / Status
         // ═══════════════════════════════════════════════════════════
 
-        private void SendMessage()
+        public void SendUserMessage(string message)
         {
-            string message = _inputText.Trim();
+            if (string.IsNullOrWhiteSpace(message)) return;
             _inputText = "";
 
             _behaviour.ChatHistory.Add(new ChatMessage(true, message));
@@ -779,6 +837,11 @@ namespace DialogInterceptorMod.UI
             _behaviour.StartCoroutine(_behaviour.APIClient.SendMessage(message));
         }
 
+        private void SendMessage()
+        {
+            SendUserMessage(_inputText.Trim());
+        }
+
         public void ScrollToBottom() => _scrollPosition = new Vector2(0, float.MaxValue);
 
         public void SetStatus(string text, bool isError)
@@ -786,6 +849,10 @@ namespace DialogInterceptorMod.UI
             _statusText    = text;
             _statusIsError = isError;
             _statusTime    = Time.time;
+            if (isError)
+            {
+                Game.NativeDialogueInputHandler.Instance?.OnAIResponseReady();
+            }
         }
 
         public void ShowEmotionFeedback(string text, bool isPositive) => SetStatus(text, !isPositive);
@@ -818,6 +885,8 @@ namespace DialogInterceptorMod.UI
                     $"Hotkey={_behaviour.ChatHotkey}",
                     $"MaxHistory={_behaviour.MaxHistoryMessages}",
                     $"AllowTrustMod={_behaviour.AllowTrustModification}",
+                    $"NativeDialogueInput={_behaviour.NativeDialogueInputEnabled}",
+                    $"NativeSpeakerName={_behaviour.NativeSpeakerName}",
                     "",
                     "[Commands]",
                     $"Follow={_behaviour.CmdFollowEnabled}",
@@ -894,6 +963,24 @@ namespace DialogInterceptorMod.UI
                             if (bool.TryParse(val, out bool atm))
                                 _behaviour.AllowTrustModification = atm;
                             break;
+                        case "NativeDialogueInput":
+                            if (bool.TryParse(val, out bool ndi))
+                            {
+                                _behaviour.NativeDialogueInputEnabled = ndi;
+                                _editNativeDialogueInput = ndi;
+                                if (Game.NativeDialogueInputHandler.Instance != null)
+                                    Game.NativeDialogueInputHandler.Instance.Enabled = ndi;
+                            }
+                            break;
+                        case "NativeSpeakerName":
+                            if (!string.IsNullOrEmpty(val))
+                            {
+                                _behaviour.NativeSpeakerName = val;
+                                _editNativeSpeakerName = val;
+                                if (Game.NativeDialogueInputHandler.Instance != null)
+                                    Game.NativeDialogueInputHandler.Instance.SpeakerName = val;
+                            }
+                            break;
                         case "Follow":
                             if (bool.TryParse(val, out bool cf)) _behaviour.CmdFollowEnabled = cf; break;
                         case "GoTo":
@@ -920,6 +1007,8 @@ namespace DialogInterceptorMod.UI
                 _editGemmaModel  = _behaviour.GemmaModel;
                 _editApiKey      = _behaviour.ApiKey;
                 _editProvider    = _behaviour.Provider;
+                _editNativeDialogueInput = _behaviour.NativeDialogueInputEnabled;
+                _editNativeSpeakerName   = _behaviour.NativeSpeakerName;
 
                 Plugin.LogInfo($"Config loaded from: {path}");
             }

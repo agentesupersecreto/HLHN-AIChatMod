@@ -78,6 +78,8 @@ You can also configure directly in the **Settings panel** (press F9 → `[CONFIG
 | ApiKey | *(empty)* | Gemini API key |
 | MaxHistory | `30` | Messages kept in context |
 | AllowTrustMod | `true` | Allow AI to modify NPC trust |
+| NativeDialogueInput | `true` | Display player typing inside the game's native `ShowDialogue` box |
+| NativeSpeakerName | `You` | Name displayed in the native dialogue box header while player speaks |
 | AI Commands | all `ON` | Per-command toggles (`follow`, `go to a place`, `clothes`, `kiss`, ...) stored in the `[Commands]` section of the `.ini` |
 
 ### Prompts: `system_prompt.txt` and `custom_prompt.txt`
