@@ -52,7 +52,8 @@ Go to https://aistudio.google.com/api-keys and create an API key (you must creat
 3. Wait for the download and extraction to complete. Upon success, it will ask you to send a message; simply type /bye or close the terminal.
 *Make sure Ollama is running on your PC and that you have downloaded a model; for the Ollama model name, you must enter the exact name of the model.*
 5. Open the game and load a save or start new game, press f9 and switch to the Ollama provider in the config panel and enter the model name (in this case `defyma85/gemma-4-E4B-it-ultra-uncensored-heretic-Q4_K_M_gguf`), It will be set by default.
-*Note: Local AI models are resource-intensive. Ensure you have a mid-to-high-end PC. Avoid using extremely lightweight or older models, as responses will degrade.*
+
+**IMPORTANT**: Local AI models are resource-intensive. Ensure you have a mid-to-high-end PC with a graphics card with at least 8 GB of VRAM; 12 GB or more is recommended. Avoid using extremely lightweight or older AI models, as responses will degrade. The recommended AI model for this mod is lightweight; it isn't very smart, but it works well for roleplay. If you have a graphics card with 12 or 16 GB of VRAM, it's better to use a Gemma-4 model, but the “abliterated” version.
 
 ### Third Step - Use
 
@@ -150,5 +151,7 @@ The AI can embed action commands into its replies to trigger in-game behaviors s
 For Gemini, verify your API key in Settings (**F9 → CONFIG**), on some occasions, the Gemini service may be busy. |
 | Tutorial images are missing or white | Verify that `1.jpg` through `5.jpg` (or `.png`) are placed in `BepInEx/config/AIChat/`. |
 | UI mod turn transparent after scene change | IMGUI textures auto-reload on scene load; if needed, click **Force Reinit Styles** under the Debug tab. |
+
+If you're using Ollama, every time you're going to use the mod, make sure Ollama is running in the background (it's usually in the hidden icons).
 
 ---
