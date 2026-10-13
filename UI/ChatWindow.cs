@@ -409,8 +409,8 @@ namespace DialogInterceptorMod.UI
 
                 GUILayout.BeginHorizontal();
                 string statusBtn = isNativeActive 
-                    ? "[Diálogo nativo activo (escribiendo...)]" 
-                    : $"[Abrir diálogo nativo ({_behaviour.NativeSpeakerName})]";
+                    ? "[Dialogue Box active (writing...)]" 
+                    : $"[Open Dialogue Box ({_behaviour.NativeSpeakerName})]";
                 if (GUILayout.Button(statusBtn, isNativeActive ? ChatStyles.ActiveButtonStyle : ChatStyles.ButtonStyle))
                 {
                     if (isNativeActive) nativeHandler.CancelInput(closeBox: true);
@@ -570,8 +570,8 @@ namespace DialogInterceptorMod.UI
             DrawCmdToggle("Force say",         ref _behaviour.CmdSayEnabled);
 
             GUILayout.Space(6);
-            GUILayout.Label("Native Dialogue Box Input:", ChatStyles.SectionStyle);
-            DrawCmdToggle("Native Dialogue", ref _editNativeDialogueInput);
+            GUILayout.Label("Dialogue Box Input:", ChatStyles.SectionStyle);
+            DrawCmdToggle("Dialogue Box", ref _editNativeDialogueInput);
 
             GUILayout.BeginHorizontal();
             GUILayout.Label("Speaker Name:", ChatStyles.DebugLabelStyle, GUILayout.Width(140));
