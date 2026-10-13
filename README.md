@@ -4,10 +4,12 @@ A BepInEx mod for **He Lives Here Now** by EvilGuest, that integrates AI-powered
 
 ---
 
+![Preview](https://i.ibb.co/VWKggJMB/unknown-2026-10-13-05-50.gif)
+
 ## Features
 
-- 🤖 **Multiple AI Backends** — Supports local models via **LM Studio** / **Ollama** (recommended: `defyma85/gemma-4-E4B-it-ultra-uncensored-heretic-Q4_K_M_gguf`) and cloud models via **Google Gemini API**.
-- 💬 **Radial Menu & Native Dialogue Box** — Approach any NPC, press **E** to open the radial interaction menu, and select **AI**. Chat using the game's native text input with real-time typing and NPC portraits.
+- 🤖 **Multiple AI Backends** — Supports local models via **LM Studio** / **Ollama** (recommended: `defyma85/gemma-4-E4B-it-ultra-uncensored-heretic-Q4_K_M_gguf`) and cloud model **Google Gemini API**.
+- 💬 **Radial Menu & Native Dialogue Box** — Approach any NPC, press **E** to open the radial interaction menu, and select **AI**. Chat using text input with real-time typing.
 - 🎭 **Dynamic Facial Reactions & Animations** — NPCs react visually to conversation sentiment: positive compliments trigger happy expressions and good dialogue animations; insults or negative replies trigger angry or annoyed reactions.
 - 📖 **In-Game Tutorial System** — Full 5-page illustrated tutorial accessible directly from the pause menu (**ESC → Tutorial → AI chat mod**). Tutorial images are loaded dynamically from `BepInEx/config/AIChat/`.
 - 🧠 **Deep Character Context** — The AI is aware of each NPC's personality, trust level, submission/desire stats, clothing status, and nearby environment.
