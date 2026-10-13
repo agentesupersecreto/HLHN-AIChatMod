@@ -1,10 +1,10 @@
 # HLHN AI Chat Mod
 
-A BepInEx mod for **He Lives Here Now** by EvilGuest, that integrates AI-powered dialogue and interactive companionship into the game. Chat seamlessly with NPCs — the four main characters (Katherine, Susan, Stacy and Laura) as well random NPC. AI responses play through the game's dialogue boxes, complete with dynamic facial expressions, emotional reactions, and in-game physical actions.
+A BepInEx mod for **He Lives Here Now** by EvilGuest, that integrates AI-powered dialogue and interactive chat into the game. Chat seamlessly with the four main characters (Katherine, Susan, Stacy and Laura) as well with random NPCs. AI responses play through the game's dialogue boxes, complete with dynamic facial expressions, emotional reactions, and in-game physical actions.
 
 ---
 
-![Preview](https://i.ibb.co/VWKggJMB/unknown-2026-10-13-05-50.gif)
+![Preview](preview.png)
 
 ## Features
 
