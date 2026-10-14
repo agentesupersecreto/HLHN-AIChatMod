@@ -15,6 +15,15 @@ namespace DialogInterceptorMod.API
     /// </summary>
     public static class AIResponseProcessor
     {
+        /// <summary>
+        /// fish.audio voice tone tags. They are kept in the text sent to the TTS endpoint but removed
+        /// from the on-screen dialogue. Only tags from the official list are matched, so any other
+        /// bracketed text the model writes is left untouched.
+        /// </summary>
+        private static readonly Regex ToneTagRegex = new Regex(
+            @"\[\s*(angry|sad|embarrassed|emphasis|whispering|soft|breathy|excited|laughing|chuckling|moaning|clear throat|sobbing|crying loudly|sighing|panting|groaning|crowd laughing|background laughter|audience laughing|pause|long pause)\s*\]",
+            RegexOptions.IgnoreCase);
+
         public static void ProcessResponse(string rawResponse, DialogBehaviour behaviour, string clientName)
         {
             try
@@ -88,26 +97,37 @@ namespace DialogInterceptorMod.API
 
                 dialogue = dialogue.Trim();
 
-                if (string.IsNullOrEmpty(dialogue) && foundCommands.Count == 0)
+                // fish.audio tone tags ([excited], [whispering], ...) act on the voice, so they stay in
+                // ttsText while displayDialogue — everything shown in the game — has them removed.
+                string ttsText = ToneTagRegex.Replace(dialogue,
+                    m => "[" + m.Groups[1].Value.ToLowerInvariant() + "]");
+                string displayDialogue = Regex.Replace(ToneTagRegex.Replace(dialogue, ""), @"[ \t]{2,}", " ").Trim();
+
+                if (string.IsNullOrEmpty(displayDialogue) && foundCommands.Count == 0)
                 {
                     behaviour.Window.SetStatus($"[ERROR] Empty or invalid response from {clientName}.", true);
                     return;
                 }
 
-                if (!string.IsNullOrEmpty(dialogue))
+                if (!string.IsNullOrEmpty(displayDialogue))
                 {
-                    // Add to chat history
-                    behaviour.ChatHistory.Add(new ChatMessage(false, dialogue));
+                    // Add to chat history (clean text, without tone tags)
+                    behaviour.ChatHistory.Add(new ChatMessage(false, displayDialogue));
                     behaviour.Memory.TotalExchangeCount++;
-                    behaviour.Memory.AutoTag(dialogue, true);
+                    behaviour.Memory.AutoTag(displayDialogue, true);
                     behaviour.Window.ScrollToBottom();
                     behaviour.Window.SetStatus($"[OK] Response received ({clientName}).", false);
 
-                    // *** KEY: Show the AI response in the game's native dialogue system ***
-                    ShowInGameDialogue(behaviour, dialogue);
-
-                    // *** KEY: Trigger facial expression and reaction animation ***
-                    CharacterReactionController.TriggerReaction(behaviour, detectedStyle, dialogue);
+                    // *** KEY: Speak the reply AND show it in-game. The voice gets the tagged text
+                    // (ttsText) so it can act, while the on-screen text and the facial reaction use the
+                    // clean displayDialogue. When TTS is enabled the voice is generated first and this
+                    // callback runs the instant the audio is ready, so text, reaction and voice all
+                    // start together; with TTS off it fires immediately. ***
+                    behaviour.SpeakWithTts(ttsText, () =>
+                    {
+                        ShowInGameDialogue(behaviour, displayDialogue);
+                        CharacterReactionController.TriggerReaction(behaviour, detectedStyle, displayDialogue);
+                    });
 
                     // Sentiment analysis → Trust modification
                     if (!string.IsNullOrEmpty(detectedStyle))
@@ -118,7 +138,7 @@ namespace DialogInterceptorMod.API
                     }
                     else
                     {
-                        string sentimentFeedback = SentimentAnalyzer.ApplySentiment(dialogue);
+                        string sentimentFeedback = SentimentAnalyzer.ApplySentiment(displayDialogue);
                         if (!string.IsNullOrEmpty(sentimentFeedback))
                             behaviour.AddCapturedEvent(sentimentFeedback);
                     }

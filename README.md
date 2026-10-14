@@ -55,6 +55,8 @@ Go to https://aistudio.google.com/api-keys and create an API key (you must creat
 
 **IMPORTANT**: Local AI models are resource-intensive. Ensure you have a mid-to-high-end PC with a graphics card with at least 8 GB of VRAM; 12 GB or more is recommended. Avoid using extremely lightweight or older AI models, as responses will degrade. The recommended AI model for this mod is lightweight; it isn't very smart, but it works well for roleplay. If you have a graphics card with 12 or 16 GB of VRAM, it's better to use a Gemma-4 model, but the “abliterated” version.
 
+**For TTS**: 
+
 ### Third Step - Use
 
 4. Open the game, approach a girl, press E and select the “AI” option.
@@ -95,6 +97,15 @@ Press **F9** and click `[CONFIG]` to configure settings:
 | NativeDialogueInput | `true` | Enables dialogue box input |
 | NativeSpeakerName | `You` | Player display name in dialogue boxes |
 | AI Commands | all `ON` | Toggles for individual commands (`follow`, `goto`, `clothes`, `kiss`, etc.) |
+| TtsEnabled | `false` | Speaks NPC replies with fish.audio text-to-speech |
+| TtsApiUrl | `https://api.fish.audio/v1/tts` | fish.audio TTS endpoint |
+| TtsApiKey | *(empty)* | fish.audio API key ([fish.audio/app/api-keys](https://fish.audio/app/api-keys)) |
+| TtsModel | `s2.1-pro-free` | fish.audio model id |
+| TtsVoiceDefault | `22bff164a7104976ba3ade3b7ec1877c` | Voice of the random NPCs: any character other than Stacy, Laura, Susan and Katherine |
+| Voice_\<Character\> | per character | Voice `reference_id` for each main character (Stacy, Laura, Susan, Katherine) |
+| TtsVolume | `1` | Voice playback volume (`0` – `1`) |
+
+The **TTS Error Log** at the bottom of `[CONFIG] → [TTS]` shows the last fish.audio failures with what they mean and what to do about them; `429` and `5xx` responses are retried up to 3 times with exponential backoff (honouring `Retry-After`), while other `4xx` codes are reported immediately because retrying cannot fix them. Every failure is also written to the BepInEx log.
 
 ---
 

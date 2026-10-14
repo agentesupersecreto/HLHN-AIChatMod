@@ -57,6 +57,12 @@ namespace DialogInterceptorMod.API
                 ? "\nFMT: Plain text dialogue only — respond as your character would speak. Commands in brackets: [CMD: name]. Styles in brackets: [STYLE: name]. Styles: happy,angry,sad,neutral,shy,aroused,annoyed,embarrassed,flirty. Example: Sure, lead the way! [STYLE: happy] [CMD: follow:start]"
                 : "\nFMT: Respond as JSON: {\"dialogue\":\"text\",\"style\":\"style\",\"command\":\"cmd_or_null\"}. Styles: happy,angry,sad,neutral,shy,aroused,annoyed,embarrassed,flirty. Set command=null when no action is needed.";
 
+            // fish.audio voice tone tags: requested only while TTS is enabled, because they exist
+            // purely to act the voice. AIResponseProcessor strips them from the on-screen dialogue.
+            string toneInstruction = DialogBehaviour.Instance.TtsEnabled
+                ? "VOICE TONE TAGS: act your voice by weaving tone tags inline, right before the words they affect. Use ONLY these lowercase square-bracket tags: [angry] [sad] [embarrassed] [emphasis] [whispering] [soft] [breathy] [excited] [laughing] [chuckling] [moaning] [clear throat] [sobbing] [crying loudly] [sighing] [panting] [groaning] [crowd laughing] [background laughter] [audience laughing] [pause] [long pause]. Example: [excited] Hi, I'm doing fine! [angry] What are you doing talking with her?"
+                : "";
+
             // Commands
             string commands = BuildCommandList();
 
@@ -75,6 +81,8 @@ namespace DialogInterceptorMod.API
                 template = template.Replace("{Memory}", memory);
                 if (!string.IsNullOrEmpty(intentGuidance))
                     template += "\n" + intentGuidance;
+                if (!string.IsNullOrEmpty(toneInstruction))
+                    template += "\n" + toneInstruction;
                 return template;
             }
 
@@ -109,6 +117,8 @@ namespace DialogInterceptorMod.API
 
             sb.AppendLine("\nACT: Adjust your tone based on your stats. If Trust is low, be more guarded. If Perversion is high and Trust is high, be more sexually open. If Submission is high, be more compliant.");
             sb.AppendLine("\nKEEP RESPONSES SHORT: 1-3 sentences max. You are having a casual conversation, not writing an essay.");
+            if (!string.IsNullOrEmpty(toneInstruction))
+                sb.AppendLine(toneInstruction);
             sb.AppendLine(formatInstruction);
 
             sb.AppendLine("\nNATIVE GAME COMMANDS (use these to trigger actions in the game):");

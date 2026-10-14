@@ -54,6 +54,9 @@ namespace DialogInterceptorMod.UI
         // Active tab: 0 = Chat, 1 = Settings, 2 = Debug
         private int _activeTab = 0;
 
+        // Sub-tab inside the Settings tab: 0 = General, 1 = TTS
+        private int _configSubTab = 0;
+
         // Settings panel fields
         private string _editOllamaUrl;
         private string _editOllamaModel;
@@ -64,6 +67,15 @@ namespace DialogInterceptorMod.UI
         private string _editGemmaModel;
         private bool _editNativeDialogueInput;
         private string _editNativeSpeakerName = "You";
+
+        // TTS (fish.audio) settings
+        private bool _editTtsEnabled;
+        private string _editTtsApiUrl;
+        private string _editTtsApiKey;
+        private string _editTtsModel;
+        private string _editTtsVoiceDefault;
+        private float _editTtsVolume = 1f;
+        private readonly Dictionary<string, string> _editTtsVoices = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
         // Hotkey editing
         private bool _listeningForKey = false;
@@ -91,6 +103,7 @@ namespace DialogInterceptorMod.UI
             _editHotkeyDisplay = _behaviour.ChatHotkey.ToString();
             _editNativeDialogueInput = _behaviour.NativeDialogueInputEnabled;
             _editNativeSpeakerName   = _behaviour.NativeSpeakerName;
+            SyncTtsEditFields();
 
             LoadConfig();
         }
@@ -313,7 +326,7 @@ namespace DialogInterceptorMod.UI
             string charLabel = string.IsNullOrEmpty(_behaviour.CurrentCharName)
                 ? "No NPC nearby"
                 : $"Chatting: {_behaviour.CurrentCharName}";
-            GUILayout.Label($"HLHN AI Chat v0.1 -- {charLabel}", ChatStyles.TitleStyle);
+            GUILayout.Label($"HLHN AI Chat v0.9 -- {charLabel}", ChatStyles.TitleStyle);
             GUILayout.FlexibleSpace();
 
             if (GUILayout.Button("[R]", ChatStyles.ButtonStyle, GUILayout.Width(32)))
@@ -358,6 +371,20 @@ namespace DialogInterceptorMod.UI
                 _activeTab = tabIndex;
         }
 
+        /// <summary>
+        /// Renders the transient status line (the last message passed to <see cref="SetStatus"/>).
+        /// Shared by the Chat and Config tabs so save/apply feedback is visible wherever the user is.
+        /// </summary>
+        private void DrawStatus()
+        {
+            if (string.IsNullOrEmpty(_statusText) || Time.time - _statusTime >= 10f) return;
+
+            Color old = GUI.color;
+            GUI.color = _statusIsError ? new Color(1f, 0.4f, 0.4f) : new Color(0.4f, 1f, 0.6f);
+            GUILayout.Label(_statusText, ChatStyles.StatusStyle);
+            GUI.color = old;
+        }
+
         // ═══════════════════════════════════════════════════════════
         //  TAB: Chat
         // ═══════════════════════════════════════════════════════════
@@ -391,13 +418,7 @@ namespace DialogInterceptorMod.UI
             GUILayout.EndScrollView();
 
             // Status
-            if (!string.IsNullOrEmpty(_statusText) && Time.time - _statusTime < 10f)
-            {
-                Color old = GUI.color;
-                GUI.color = _statusIsError ? new Color(1f, 0.4f, 0.4f) : new Color(0.4f, 1f, 0.6f);
-                GUILayout.Label(_statusText, ChatStyles.StatusStyle);
-                GUI.color = old;
-            }
+            DrawStatus();
 
             // Input
             GUILayout.Space(4);
@@ -486,7 +507,29 @@ namespace DialogInterceptorMod.UI
         //  TAB: Settings
         // ═══════════════════════════════════════════════════════════
 
+        /// <summary>
+        /// CONFIG tab. It holds two sub-tabs so the settings stay organised: "General"
+        /// (providers, hotkey, commands, dialogue box) and "TTS" (fish.audio).
+        /// </summary>
         private void DrawSettings()
+        {
+            GUILayout.BeginHorizontal();
+            if (GUILayout.Button("[General]", _configSubTab == 0 ? ChatStyles.ActiveButtonStyle : ChatStyles.ButtonStyle))
+                _configSubTab = 0;
+            if (GUILayout.Button("[TTS]", _configSubTab == 1 ? ChatStyles.ActiveButtonStyle : ChatStyles.ButtonStyle))
+                _configSubTab = 1;
+            GUILayout.EndHorizontal();
+
+            GUILayout.Space(4);
+
+            // Shared status line: applying settings here reports in CONFIG, not only in CHAT.
+            DrawStatus();
+
+            if (_configSubTab == 0) DrawSettingsGeneral();
+            else                    DrawTts();
+        }
+
+        private void DrawSettingsGeneral()
         {
             GUILayout.Label("[SET] Settings", ChatStyles.SectionStyle);
             GUILayout.Space(4);
@@ -581,24 +624,53 @@ namespace DialogInterceptorMod.UI
             GUILayout.Space(8);
             if (GUILayout.Button("Apply & Save", ChatStyles.ActiveButtonStyle))
             {
-                _behaviour.Provider    = _editProvider;
-                _behaviour.OllamaUrl   = _editOllamaUrl;
-                _behaviour.OllamaModel = _editOllamaModel;
-                _behaviour.GemmaUrl    = _editGemmaUrl;
-                _behaviour.GemmaModel  = _editGemmaModel;
-                _behaviour.ApiKey      = _editApiKey;
-                _behaviour.NativeDialogueInputEnabled = _editNativeDialogueInput;
-                _behaviour.NativeSpeakerName = string.IsNullOrWhiteSpace(_editNativeSpeakerName) ? "You" : _editNativeSpeakerName.Trim();
-                if (Game.NativeDialogueInputHandler.Instance != null)
-                {
-                    Game.NativeDialogueInputHandler.Instance.Enabled = _behaviour.NativeDialogueInputEnabled;
-                    Game.NativeDialogueInputHandler.Instance.SpeakerName = _behaviour.NativeSpeakerName;
-                }
-                _behaviour.RebuildApiClient();
-                SaveConfig();
+                ApplyAllSettings();
                 SetStatus("Settings saved to BepInEx/config!", false);
                 _activeTab = 0;
             }
+        }
+
+        /// <summary>
+        /// Pushes every edit field (General + TTS) into the behaviour and persists the ini.
+        /// Shared by both CONFIG sub-tabs so an edit made in General is not lost when TTS is applied
+        /// (and vice versa).
+        /// </summary>
+        private void ApplyAllSettings()
+        {
+            _behaviour.Provider    = _editProvider;
+            _behaviour.OllamaUrl   = _editOllamaUrl;
+            _behaviour.OllamaModel = _editOllamaModel;
+            _behaviour.GemmaUrl    = _editGemmaUrl;
+            _behaviour.GemmaModel  = _editGemmaModel;
+            _behaviour.ApiKey      = _editApiKey;
+            _behaviour.NativeDialogueInputEnabled = _editNativeDialogueInput;
+            _behaviour.NativeSpeakerName = string.IsNullOrWhiteSpace(_editNativeSpeakerName) ? "You" : _editNativeSpeakerName.Trim();
+            if (Game.NativeDialogueInputHandler.Instance != null)
+            {
+                Game.NativeDialogueInputHandler.Instance.Enabled = _behaviour.NativeDialogueInputEnabled;
+                Game.NativeDialogueInputHandler.Instance.SpeakerName = _behaviour.NativeSpeakerName;
+            }
+
+            _behaviour.TtsEnabled      = _editTtsEnabled;
+            _behaviour.TtsApiUrl       = string.IsNullOrWhiteSpace(_editTtsApiUrl) ? "https://api.fish.audio/v1/tts" : _editTtsApiUrl.Trim();
+            _behaviour.TtsApiKey       = _editTtsApiKey?.Trim() ?? "";
+            _behaviour.TtsModel        = string.IsNullOrWhiteSpace(_editTtsModel) ? "s2.1-pro-free" : _editTtsModel.Trim();
+            // Empty field = back to the shipped random-NPC voice, matching what LoadConfig does
+            // with an empty value in the ini.
+            _behaviour.TtsVoiceDefault = string.IsNullOrWhiteSpace(_editTtsVoiceDefault)
+                ? DialogBehaviour.DefaultNpcVoice
+                : _editTtsVoiceDefault.Trim();
+            _behaviour.TtsVolume       = Mathf.Clamp01(_editTtsVolume);
+
+            _behaviour.TtsVoices.Clear();
+            foreach (var kv in _editTtsVoices)
+            {
+                if (!string.IsNullOrWhiteSpace(kv.Value))
+                    _behaviour.TtsVoices[kv.Key] = kv.Value.Trim();
+            }
+
+            _behaviour.RebuildApiClient();
+            SaveConfig();
         }
 
         private void DrawCmdToggle(string label, ref bool value)
@@ -612,6 +684,129 @@ namespace DialogInterceptorMod.UI
                 value = !value;
             }
             GUILayout.EndHorizontal();
+        }
+
+        // ══════════════════════════════════════════════════════════
+        //  TAB: TTS (fish.audio)
+        // ══════════════════════════════════════════════════════════
+
+        private void DrawTts()
+        {
+            GUILayout.Label("[TTS] Text-to-Speech (fish.audio)", ChatStyles.SectionStyle);
+            GUILayout.Space(4);
+
+            DrawCmdToggle("Enable TTS", ref _editTtsEnabled);
+
+            GUILayout.Space(6);
+            GUILayout.Label("API URL:", ChatStyles.LabelStyle);
+            _editTtsApiUrl = GUILayout.TextField(_editTtsApiUrl, ChatStyles.InputStyle);
+
+            GUILayout.Label("API Key:", ChatStyles.LabelStyle);
+            _editTtsApiKey = GUILayout.TextField(_editTtsApiKey, ChatStyles.InputStyle);
+
+            GUILayout.Label("Model:", ChatStyles.LabelStyle);
+            _editTtsModel = GUILayout.TextField(_editTtsModel, ChatStyles.InputStyle);
+
+            GUILayout.Space(6);
+            GUILayout.Label($"Voice Volume: {Mathf.RoundToInt(_editTtsVolume * 100f)}%", ChatStyles.LabelStyle);
+            _editTtsVolume = GUILayout.HorizontalSlider(_editTtsVolume, 0f, 1f);
+
+            GUILayout.Space(6);
+            GUILayout.Label("Default NPC Voice (reference_id):", ChatStyles.LabelStyle);
+            _editTtsVoiceDefault = GUILayout.TextField(_editTtsVoiceDefault, ChatStyles.InputStyle);
+            GUILayout.Label("Used for every random NPC: any character that is not Stacy, Laura, Susan or Katherine.", ChatStyles.FooterStyle);
+
+            GUILayout.Space(6);
+            GUILayout.Label("Main character voices (reference_id):", ChatStyles.SectionStyle);
+            foreach (string character in DialogBehaviour.MainCharacters)
+            {
+                if (!_editTtsVoices.TryGetValue(character, out string voice))
+                    voice = "";
+
+                GUILayout.BeginHorizontal();
+                GUILayout.Label(character + ":", ChatStyles.DebugLabelStyle, GUILayout.Width(90));
+                voice = GUILayout.TextField(voice ?? "", ChatStyles.InputStyle, GUILayout.ExpandWidth(true));
+                GUILayout.EndHorizontal();
+                _editTtsVoices[character] = voice;
+            }
+
+            GUILayout.Space(8);
+            if (GUILayout.Button("Apply & Save", ChatStyles.ActiveButtonStyle))
+            {
+                ApplyAllSettings();
+                SetStatus("TTS settings saved.", false);
+            }
+
+            GUILayout.Space(10);
+            DrawTtsErrorLog();
+        }
+
+        /// <summary>
+        /// Visual log of the fish.audio failures. The status line is gone after a few seconds, so the
+        /// TTS tab keeps the failures - with what they mean and what to do - until they are cleared.
+        /// </summary>
+        private void DrawTtsErrorLog()
+        {
+            GUILayout.BeginHorizontal();
+            GUILayout.Label($"TTS Error Log ({API.TtsErrorLog.Count})", ChatStyles.SectionStyle, GUILayout.ExpandWidth(true));
+            if (API.TtsErrorLog.Count > 0 && GUILayout.Button("[Clear]", ChatStyles.ButtonStyle, GUILayout.Width(70)))
+                API.TtsErrorLog.Clear();
+            GUILayout.EndHorizontal();
+
+            if (API.TtsErrorLog.Count == 0)
+            {
+                GUILayout.Label("No TTS errors.", ChatStyles.FooterStyle);
+                return;
+            }
+
+            API.TtsError last = API.TtsErrorLog.Last;
+            Color previous = GUI.color;
+            GUI.color = new Color(1f, 0.55f, 0.55f);
+            GUILayout.Label($"{last.Title}  ({TtsErrorMeta(last)})", ChatStyles.LabelStyle);
+            GUI.color = previous;
+
+            GUILayout.Label("   " + last.Meaning, ChatStyles.DebugLabelStyle);
+            GUILayout.Label("   " + last.Advice, ChatStyles.FooterStyle);
+            if (!string.IsNullOrEmpty(last.ServerMessage))
+                GUILayout.Label("   server: " + last.ServerMessage, ChatStyles.FooterStyle);
+
+            if (API.TtsErrorLog.Count > 1)
+            {
+                GUILayout.Space(4);
+                GUILayout.Label("Older:", ChatStyles.DebugHeaderStyle);
+                int shown = Mathf.Min(API.TtsErrorLog.Count, 4);
+                for (int i = 1; i < shown; i++)
+                {
+                    API.TtsError older = API.TtsErrorLog.Entries[i];
+                    GUILayout.Label($"   {older.Time:HH:mm:ss}  {older.Title}", ChatStyles.DebugLabelStyle);
+                }
+            }
+        }
+
+        /// <summary>Timestamp and how the failure was reached: retries and repeated lines.</summary>
+        private static string TtsErrorMeta(API.TtsError error)
+        {
+            var sb = new System.Text.StringBuilder(error.Time.ToString("HH:mm:ss"));
+            if (error.Attempts > 1)
+                sb.Append(" | ").Append(error.Attempts).Append(" attempts");
+            if (error.RepeatCount > 1)
+                sb.Append(" | repeated x").Append(error.RepeatCount);
+            return sb.ToString();
+        }
+
+        /// <summary>Copies the TTS settings from the behaviour into the edit fields.</summary>
+        private void SyncTtsEditFields()
+        {
+            _editTtsEnabled      = _behaviour.TtsEnabled;
+            _editTtsApiUrl       = _behaviour.TtsApiUrl;
+            _editTtsApiKey       = _behaviour.TtsApiKey;
+            _editTtsModel        = _behaviour.TtsModel;
+            _editTtsVoiceDefault = _behaviour.TtsVoiceDefault;
+            _editTtsVolume       = _behaviour.TtsVolume;
+
+            _editTtsVoices.Clear();
+            foreach (var kv in _behaviour.TtsVoices)
+                _editTtsVoices[kv.Key] = kv.Value;
         }
 
         // ═══════════════════════════════════════════════════════════
@@ -878,7 +1073,20 @@ namespace DialogInterceptorMod.UI
                     $"EmotionMod={_behaviour.CmdEmotionModEnabled}",
                     $"MakeFace={_behaviour.CmdMakeFaceEnabled}",
                     $"Say={_behaviour.CmdSayEnabled}",
+                    "",
+                    "[TTS]",
+                    $"TtsEnabled={_behaviour.TtsEnabled}",
+                    $"TtsApiUrl={_behaviour.TtsApiUrl}",
+                    $"TtsApiKey={_behaviour.TtsApiKey}",
+                    $"TtsModel={_behaviour.TtsModel}",
+                    $"TtsVoiceDefault={_behaviour.TtsVoiceDefault}",
+                    $"TtsVolume={_behaviour.TtsVolume.ToString(System.Globalization.CultureInfo.InvariantCulture)}",
                 };
+
+                // One line per configured character voice: Voice_<Character>=<reference_id>
+                foreach (var kv in _behaviour.TtsVoices)
+                    lines.Add($"Voice_{kv.Key}={kv.Value}");
+
                 File.WriteAllLines(GetIniPath(), lines);
                 Plugin.LogInfo($"Config saved to: {GetIniPath()}");
             }
@@ -905,6 +1113,15 @@ namespace DialogInterceptorMod.UI
                     if (eq < 0) continue;
                     string key = trimmed.Substring(0, eq).Trim();
                     string val = trimmed.Substring(eq + 1).Trim();
+
+                    // Per-character TTS voices: Voice_<Character>=<reference_id>
+                    if (key.StartsWith("Voice_", StringComparison.OrdinalIgnoreCase))
+                    {
+                        string charName = key.Substring("Voice_".Length).Trim();
+                        if (!string.IsNullOrEmpty(charName) && !string.IsNullOrWhiteSpace(val))
+                            _behaviour.TtsVoices[charName] = val.Trim();
+                        continue;
+                    }
 
                     switch (key)
                     {
@@ -978,6 +1195,26 @@ namespace DialogInterceptorMod.UI
                             if (bool.TryParse(val, out bool cmf)) _behaviour.CmdMakeFaceEnabled = cmf; break;
                         case "Say":
                             if (bool.TryParse(val, out bool cs)) _behaviour.CmdSayEnabled = cs; break;
+                        case "TtsEnabled":
+                            if (bool.TryParse(val, out bool ttsEn)) _behaviour.TtsEnabled = ttsEn; break;
+                        case "TtsApiUrl":
+                            if (!string.IsNullOrWhiteSpace(val)) _behaviour.TtsApiUrl = val; break;
+                        case "TtsApiKey":
+                            _behaviour.TtsApiKey = val; break;
+                        case "TtsModel":
+                            if (!string.IsNullOrWhiteSpace(val)) _behaviour.TtsModel = val; break;
+                        case "TtsVoiceDefault":
+                            // The shipped value is the shared voice for the random/secondary NPCs.
+                            // Configs written before that default existed saved this key empty, so an
+                            // empty value means "not set" (keep the default) rather than "mute every
+                            // random NPC".
+                            if (!string.IsNullOrWhiteSpace(val))
+                                _behaviour.TtsVoiceDefault = val;
+                            break;
+                        case "TtsVolume":
+                            if (float.TryParse(val, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float ttsVol))
+                                _behaviour.TtsVolume = Mathf.Clamp01(ttsVol);
+                            break;
                     }
                 }
 
@@ -990,6 +1227,7 @@ namespace DialogInterceptorMod.UI
                 _editProvider    = _behaviour.Provider;
                 _editNativeDialogueInput = _behaviour.NativeDialogueInputEnabled;
                 _editNativeSpeakerName   = _behaviour.NativeSpeakerName;
+                SyncTtsEditFields();
 
                 Plugin.LogInfo($"Config loaded from: {path}");
             }

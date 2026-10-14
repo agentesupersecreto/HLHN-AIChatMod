@@ -25,6 +25,7 @@ namespace DialogInterceptorMod.Core
 
         public ChatWindow Window { get; private set; }
         public IApiClient APIClient { get; private set; }
+        public TtsClient Tts { get; private set; }
 
         public List<ChatMessage> ChatHistory { get; private set; } = new List<ChatMessage>();
         public string ChatSummary = "";
@@ -57,6 +58,61 @@ namespace DialogInterceptorMod.Core
         // --- Native Dialogue Box Input ---
         public bool NativeDialogueInputEnabled = true;
         public string NativeSpeakerName        = "You";
+
+        // --- Text-to-Speech (fish.audio) ---
+        // The NPC reply is sent to fish.audio and the returned MP3 is played back in-game.
+        // Each character can use her own voice (fish.audio reference_id).
+        public bool TtsEnabled = false;
+        public string TtsApiUrl = "https://api.fish.audio/v1/tts";
+        public string TtsApiKey = "";
+        public string TtsModel = "s2.1-pro-free";
+        /// <summary>
+        /// Voice shipped for the random/secondary NPCs: every character that is NOT one of the
+        /// <see cref="MainCharacters"/> below. It is what the "Default NPC Voice" field holds out of
+        /// the box, and what an empty field falls back to (see <see cref="TtsVoiceDefault"/>).
+        /// </summary>
+        public const string DefaultNpcVoice = "22bff164a7104976ba3ade3b7ec1877c";
+
+        /// <summary>
+        /// Shared voice for the random/secondary NPCs. Changes made in the TTS tab are saved in the
+        /// ini; a value found there overrides <see cref="DefaultNpcVoice"/>.
+        /// </summary>
+        public string TtsVoiceDefault = DefaultNpcVoice;
+        public float TtsVolume = 1f;
+
+        /// <summary>
+        /// Main characters of the house, offered as editable voice slots in the TTS tab.
+        /// Every other NPC (the random/secondary ones) falls back to <see cref="TtsVoiceDefault"/>.
+        /// </summary>
+        public static readonly string[] MainCharacters = { "Katherine", "Susan", "Stacy", "Laura" };
+
+        /// <summary>
+        /// Character name -> fish.audio voice reference_id. Shipped with a default voice for each of
+        /// the four main characters; a value in the ini overrides the default, and clears it back to
+        /// the default when the field is left empty.
+        /// </summary>
+        public Dictionary<string, string> TtsVoices { get; private set; }
+            = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                { "Katherine", "24c9366ab9704b8bbde8e53c4826610c" },
+                { "Susan",     "2a9605eeafe84974b5b20628d42c0060" },
+                { "Stacy",     "ca3007f96ae7499ab87d27ea3599956a" },
+                { "Laura",     "ffaf1ae1d3a1404e836ae205d42c94e9" },
+            };
+
+        /// <summary>
+        /// Voice reference used for a character, falling back to <see cref="TtsVoiceDefault"/> (the
+        /// random-NPC voice) when the character has no dedicated voice configured.
+        /// </summary>
+        public string GetTtsVoice(string characterName)
+        {
+            if (!string.IsNullOrEmpty(characterName) &&
+                TtsVoices.TryGetValue(characterName, out string voice) &&
+                !string.IsNullOrWhiteSpace(voice))
+                return voice.Trim();
+
+            return TtsVoiceDefault;
+        }
 
         // --- Spam Filter ---
         public SpamFilter SpamFilter { get; private set; } = new SpamFilter();
@@ -117,6 +173,9 @@ namespace DialogInterceptorMod.Core
 
             // Creates BepInEx/config/AIChat/{system_prompt,custom_prompt}.txt on first run
             PromptBuilder.EnsurePromptFiles();
+
+            // Text-to-speech host, lives on this persistent GameObject.
+            Tts = new TtsClient(this);
         }
 
         private void Start()
@@ -128,6 +187,11 @@ namespace DialogInterceptorMod.Core
         private void OnEnable()
         {
             SceneManager.sceneUnloaded += OnSceneUnloaded;
+        }
+
+        private void OnDestroy()
+        {
+            Tts?.Dispose();
         }
 
         private void OnDisable()
@@ -547,6 +611,19 @@ namespace DialogInterceptorMod.Core
             {
                 showDialogue.ShowSimpleWithName(text, CurrentCharName);
             }
+        }
+
+        /// <summary>
+        /// Speaks the NPC reply out loud through the configured TTS endpoint.
+        /// <paramref name="onAudioReady"/> is invoked as soon as the audio is ready (so the caller can
+        /// show the reply at the same moment as the voice), or immediately when TTS is unavailable.
+        /// </summary>
+        public void SpeakWithTts(string text, Action onAudioReady)
+        {
+            if (Tts != null)
+                Tts.Speak(text, CurrentCharName, onAudioReady);
+            else
+                onAudioReady?.Invoke();
         }
 
         /// <summary>
