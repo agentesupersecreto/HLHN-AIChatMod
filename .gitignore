@@ -2,6 +2,7 @@ Assembly-CSharp/
 .codegraph/
 bin/
 obj/
+main_female_characters/
 update_log.txt
 AGENTS.md
 ANIMATIONS.md

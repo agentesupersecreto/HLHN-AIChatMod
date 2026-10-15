@@ -11,6 +11,13 @@ namespace DialogInterceptorMod.Patching
     /// Key intercepts:
     /// 1. Speach.Say() — captures ALL NPC dialogue to feed context to AI
     /// 2. TalkInteractions.Talk/Cumpliment/Critic — detects player-initiated conversations
+    /// 10-12. The game's own dialogue lines - the bubbles, the dialogue box and the Sex-Talk windows -
+    ///         are read out loud when the "Default Game Dialogues" option is on (see
+    ///         <see cref="Game.NativeDialogueTts"/>).
+    /// 
+    /// The voicing patches sit next to the capture patches and never change what the game shows: a
+    /// line that the game itself drops (the bubble is busy, the box is still showing the previous
+    /// line, Sex-Talk is off) is not voiced either, because the player never read it.
     /// </summary>
     public static class HarmonyPatches
     {
@@ -321,6 +328,218 @@ namespace DialogInterceptorMod.Patching
                 catch (Exception ex)
                 {
                     Plugin.LogDebug($"[ImageTutorial.Show Postfix] {ex.Message}");
+                }
+            }
+        }
+
+        // ═══════════════════════════════════════════════════════════
+        //  PATCH 10: Read the NPC bubbles out loud (Talk About,
+        //            Compliment, Critic, gifts, kisses, random chatter)
+        // ═══════════════════════════════════════════════════════════
+
+        /// <summary>
+        /// Voices the lines the game puts in an NPC's speech bubble. The speaker is the component the
+        /// line belongs to, which is how a main character keeps her voice and a random NPC hers.
+        ///
+        /// This runs alongside <see cref="Speach_Say_Patch"/>, which feeds the same line to the AI
+        /// context; the two are independent, so the context never depends on the TTS option.
+        /// </summary>
+        [HarmonyPatch(typeof(Speach), "Say")]
+        public static class Speach_Say_NativeTts_Patch
+        {
+            static void Postfix(Speach __instance, string text)
+            {
+                try
+                {
+                    // Say() drops the line while the NPC is still speaking, and a line the player
+                    // never saw must not be heard either.
+                    if (!Game.NativeDialogueTts.LineWasShown(__instance, text)) return;
+
+                    Game.NativeDialogueTts.Speak(
+                        Game.NativeDialogueTts.SpeakerFrom(__instance), text, "Speach.Say",
+                        allowCurrentNpcFallback: true);
+                }
+                catch (Exception ex)
+                {
+                    Plugin.LogDebug($"[NativeTts] Speach.Say: {ex.Message}");
+                }
+            }
+        }
+
+        // ═══════════════════════════════════════════════════════════
+        //  PATCH 11: Read the dialogue box out loud (events, gifts,
+        //            kisses, the jail Police, quest lines)
+        // ═══════════════════════════════════════════════════════════
+
+        /// <summary>
+        /// Voices <c>ShowDialogue.ShowSimpleWithName(text, name)</c>, the box every scripted event uses.
+        ///
+        /// The name is the speaker: a character name keeps her voice ("Katherine" for
+        /// KatherineSalutesAtNight), "Police" gets a random NPC's, and "whispers" / "Me" / an empty
+        /// name are not characters and stay silent - an empty name is the game narrating the player's
+        /// own situation ("It seems you're finally free, investigate how to get out"), which nobody
+        /// should hear an NPC say. <c>ShowSimpleText()</c> is left alone for the same reason: it
+        /// carries no speaker at all and is used for the interface ("Laura is here", "Your lust has
+        /// run out").
+        /// </summary>
+        [HarmonyPatch(typeof(ShowDialogue), "ShowSimpleWithName")]
+        public static class ShowDialogue_ShowSimpleWithName_Patch
+        {
+            static void Prefix(ShowDialogue __instance, out bool __state)
+            {
+                // The box ignores a new line while "showing" is set (its own guard), so whether the
+                // line was accepted has to be read before the original runs.
+                __state = __instance.showing;
+            }
+
+            static void Postfix(string NewText, string NewName, bool __state)
+            {
+                try
+                {
+                    if (__state) return;
+                    Game.NativeDialogueTts.Speak(NewName, NewText, "ShowDialogue.ShowSimpleWithName");
+                }
+                catch (Exception ex)
+                {
+                    Plugin.LogDebug($"[NativeTts] ShowSimpleWithName: {ex.Message}");
+                }
+            }
+        }
+
+        /// <summary>
+        /// Voices the lines of <c>ShowDialogue.ShowArrayText(texts, name)</c>: same box, same speaker
+        /// rule, one line after another. The mod's own repeat guard keeps a line repeated inside the
+        /// array from being requested twice.
+        /// </summary>
+        [HarmonyPatch(typeof(ShowDialogue), "ShowArrayText")]
+        public static class ShowDialogue_ShowArrayText_Patch
+        {
+            static void Prefix(ShowDialogue __instance, out bool __state)
+            {
+                __state = __instance.showing;
+            }
+
+            static void Postfix(string[] NewText, string NewName, bool __state)
+            {
+                try
+                {
+                    if (__state || NewText == null) return;
+
+                    foreach (string line in NewText)
+                        Game.NativeDialogueTts.Speak(NewName, line, "ShowDialogue.ShowArrayText");
+                }
+                catch (Exception ex)
+                {
+                    Plugin.LogDebug($"[NativeTts] ShowArrayText: {ex.Message}");
+                }
+            }
+        }
+
+        // ═══════════════════════════════════════════════════════════
+        //  PATCH 12: Read the "Sex-Talk" windows out loud
+        //            (SexDialogue, CumDialogue, ThreesomeSexDialogue)
+        // ═══════════════════════════════════════════════════════════
+
+        /// <summary>
+        /// Voices the Sex-Talk window used for the comments a character makes while she is in sex
+        /// mode. The speaker arrives as the NPC's object name ("Katherine 1"), which the window
+        /// itself shortens to the first word - the voice lookup does the same.
+        /// </summary>
+        [HarmonyPatch(typeof(SexDialogue), "ShowText")]
+        public static class SexDialogue_ShowText_Patch
+        {
+            static void Prefix(SexDialogue __instance, out bool __state)
+            {
+                __state = __instance.showing;
+            }
+
+            static void Postfix(string Npc, string Phrase, bool __state)
+            {
+                try
+                {
+                    if (!Game.NativeDialogueTts.SexTalkWillShow(Npc, Phrase, "SexDialogue.ShowText")) return;
+                    if (__state) return;
+
+                    // sexTalk: the line is sent with the [moaning] tag in front.
+                    Game.NativeDialogueTts.Speak(Npc, Phrase, "SexDialogue.ShowText", sexTalk: true);
+                }
+                catch (Exception ex)
+                {
+                    Plugin.LogDebug($"[NativeTts] SexDialogue.ShowText: {ex.Message}");
+                }
+            }
+        }
+
+        /// <summary>
+        /// Voices <c>SexDialogue.ForceText()</c>: the enter/exit lines that interrupt whatever the
+        /// window is showing, so it has no "busy" guard of its own.
+        /// </summary>
+        [HarmonyPatch(typeof(SexDialogue), "ForceText")]
+        public static class SexDialogue_ForceText_Patch
+        {
+            static void Postfix(string Npc, string Phrase)
+            {
+                try
+                {
+                    if (!Game.NativeDialogueTts.SexTalkWillShow(Npc, Phrase, "SexDialogue.ForceText")) return;
+
+                    Game.NativeDialogueTts.Speak(Npc, Phrase, "SexDialogue.ForceText", sexTalk: true);
+                }
+                catch (Exception ex)
+                {
+                    Plugin.LogDebug($"[NativeTts] SexDialogue.ForceText: {ex.Message}");
+                }
+            }
+        }
+
+        /// <summary>Voices the cum-shot window ("So deep...") of the same Sex-Talk group.</summary>
+        [HarmonyPatch(typeof(CumDialogue), "ShowText")]
+        public static class CumDialogue_ShowText_Patch
+        {
+            static void Prefix(CumDialogue __instance, out bool __state)
+            {
+                __state = __instance.showing;
+            }
+
+            static void Postfix(string Npc, string Phrase, bool __state)
+            {
+                try
+                {
+                    if (!Game.NativeDialogueTts.SexTalkWillShow(Npc, Phrase, "CumDialogue.ShowText")) return;
+                    if (__state) return;
+
+                    Game.NativeDialogueTts.Speak(Npc, Phrase, "CumDialogue.ShowText", sexTalk: true);
+                }
+                catch (Exception ex)
+                {
+                    Plugin.LogDebug($"[NativeTts] CumDialogue.ShowText: {ex.Message}");
+                }
+            }
+        }
+
+        /// <summary>Voices the window the game shows for a third character during a threesome.</summary>
+        [HarmonyPatch(typeof(ThreesomeSexDialogue), "ShowText")]
+        public static class ThreesomeSexDialogue_ShowText_Patch
+        {
+            static void Prefix(ThreesomeSexDialogue __instance, out bool __state)
+            {
+                // This window keeps its "showing" flag private, so it is read through Harmony's
+                // Traverse like the mod does elsewhere.
+                __state = Traverse.Create(__instance).Field<bool>("showing").Value;
+            }
+
+            static void Postfix(string Npc, string Phrase, bool __state)
+            {
+                try
+                {
+                    if (!Game.NativeDialogueTts.SexTalkWillShow(Npc, Phrase, "ThreesomeSexDialogue.ShowText")) return;
+                    if (__state) return;
+
+                    Game.NativeDialogueTts.Speak(Npc, Phrase, "ThreesomeSexDialogue.ShowText", sexTalk: true);
+                }
+                catch (Exception ex)
+                {
+                    Plugin.LogDebug($"[NativeTts] ThreesomeSexDialogue.ShowText: {ex.Message}");
                 }
             }
         }

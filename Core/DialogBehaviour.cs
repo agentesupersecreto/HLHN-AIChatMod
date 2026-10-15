@@ -90,6 +90,31 @@ namespace DialogInterceptorMod.Core
         public bool TtsDistinctNpcVoices = true;
 
         /// <summary>
+        /// When on, the mod also reads out loud the dialogue the game itself writes: the Talk About /
+        /// Compliment / Critic replies, the interactions and events (gifts, kisses, the jail Police),
+        /// and the "Sex-Talk" lines shown while a character is in sex mode. They use the same voices as
+        /// the AI replies (a main character her own slot, any other character her random voice).
+        ///
+        /// Off by default: every one of those lines is a separate paid request, and the game speaks
+        /// them constantly - a party, a scene with several NPCs, or sex mode alone would spend far more
+        /// than the AI conversation does. See <see cref="Game.NativeDialogueTts"/>.
+        /// </summary>
+        public bool TtsGameDialogues = false;
+
+        /// <summary>
+        /// When on (the default), the audio of the game's own dialogue lines is kept on disk in
+        /// <c>BepInEx/config/AIChat/tts_cache</c>: the game repeats those lines constantly (Talk About
+        /// comments, greetings, kiss replies, Sex-Talk), and a line that has already been paid for is
+        /// replayed from the file - instantly, and without a second request.
+        ///
+        /// Only the game's lines are stored. AI replies are new sentences nearly every time, so they
+        /// would fill the folder with one-use files and evict the lines worth keeping. The cache keeps
+        /// itself under <see cref="API.TtsAudioCache.DefaultMaxBytes"/> (200 MB) by deleting the least
+        /// recently used entries, and the TTS tab can clear it. See <see cref="API.TtsAudioCache"/>.
+        /// </summary>
+        public bool TtsNativeCache = true;
+
+        /// <summary>
         /// Picks (and remembers) the voice of each random NPC; see <see cref="API.NpcVoiceAssigner"/>.
         /// </summary>
         public API.NpcVoiceAssigner NpcVoices { get; } = new API.NpcVoiceAssigner();
@@ -661,11 +686,22 @@ namespace DialogInterceptorMod.Core
                 return;
             }
 
-            // Fallback: no NPC bound — try ShowDialogue directly
+            // Fallback: no NPC bound — try ShowDialogue directly.
+            // The flag tells the native-dialogue patch that this box is the AI reply, not one of the
+            // game's own lines: without it the reply would be sent to the endpoint a second time and
+            // read in the wrong voice.
             var showDialogue = FindFirstObjectByType<ShowDialogue>();
             if (showDialogue != null)
             {
-                showDialogue.ShowSimpleWithName(text, CurrentCharName);
+                if (Window != null) Window.IsAIResponse = true;
+                try
+                {
+                    showDialogue.ShowSimpleWithName(text, CurrentCharName);
+                }
+                finally
+                {
+                    if (Window != null) Window.IsAIResponse = false;
+                }
             }
         }
 

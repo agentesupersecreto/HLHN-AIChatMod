@@ -23,20 +23,52 @@ namespace DialogInterceptorMod.API
         private readonly DialogBehaviour _behaviour;
         private readonly AudioSource _audioSource;
 
-        // Only one line plays at a time: a newer reply replaces the current one.
+        /// <summary>
+        /// Audio of the game's own lines that has already been paid for: a line said twice is replayed
+        /// from disk instead of being requested again. See <see cref="TtsAudioCache"/>.
+        /// </summary>
+        private readonly TtsAudioCache _cache;
+
+        /// <summary>The on-disk cache, exposed so the TTS tab can show its size and clear it.</summary>
+        public TtsAudioCache Cache => _cache;
+
+        /// <summary>
+        /// The game's own dialogue runs on its own channel: a bubble can appear while the AI reply is
+        /// still being generated, and cutting that request off would lose the reply.
+        /// </summary>
+        private readonly AudioSource _nativeAudioSource;
+
+        // Only one line plays at a time per channel: a newer line replaces the current one.
         private AudioClip _currentClip;
         private Coroutine _routine;
         private UnityWebRequest _pendingRequest;
 
+        private AudioClip _nativeClip;
+        private Coroutine _nativeRoutine;
+        private UnityWebRequest _nativeRequest;
+
+        // Whether the last playback of each channel actually reached the AudioSource. Only audio Unity
+        // has decoded once is cached: an endpoint answering with something that is not audio must not
+        // be stored, or the bad file would be replayed on every later line.
+        private bool _playbackOk;
+        private bool _nativePlaybackOk;
+
         public TtsClient(DialogBehaviour behaviour)
         {
             _behaviour = behaviour;
+            _cache = new TtsAudioCache(Plugin.GetDataDir(Plugin.TtsCacheDirName));
 
             _audioSource = behaviour.gameObject.AddComponent<AudioSource>();
             _audioSource.playOnAwake = false;
             _audioSource.loop = false;
             _audioSource.spatialBlend = 0f; // 2D: the voice is heard at full volume wherever the player stands.
-            PlatformSettings();
+            PlatformSettings(_audioSource);
+
+            _nativeAudioSource = behaviour.gameObject.AddComponent<AudioSource>();
+            _nativeAudioSource.playOnAwake = false;
+            _nativeAudioSource.loop = false;
+            _nativeAudioSource.spatialBlend = 0f;
+            PlatformSettings(_nativeAudioSource);
         }
 
         /// <summary>
@@ -102,67 +134,169 @@ namespace DialogInterceptorMod.API
             _routine = _behaviour.StartCoroutine(SpeakRoutine(text.Trim(), voice, characterName, onReady));
         }
 
-        /// <summary>Stops playback, aborts an in-flight request and drops the pending coroutine.</summary>
-        public void CancelPending()
+        /// <summary>
+        /// Speaks one of the game's own dialogue lines (see
+        /// <see cref="Game.NativeDialogueTts"/>), on the native channel so it never cancels an AI
+        /// reply that is still being generated.
+        ///
+        /// Unlike <see cref="Speak"/>, a native line that cannot be voiced is dropped quietly: the
+        /// game speaks constantly, and a missing voice or an empty field would otherwise fill the TTS
+        /// error log with the same entry every few seconds.
+        /// </summary>
+        public void SpeakNative(string text, string characterName)
         {
-            if (_routine != null)
+            if (!_behaviour.TtsEnabled) return;
+            if (string.IsNullOrWhiteSpace(text)) return;
+
+            // A paused circuit breaker is handled once the line turns out not to be cached (see
+            // SpeakRoutine): a line already on disk is free and still plays while TTS is paused.
+
+            if (string.IsNullOrWhiteSpace(_behaviour.TtsApiUrl) || string.IsNullOrWhiteSpace(_behaviour.TtsApiKey))
+                return;
+
+            string voice = _behaviour.GetTtsVoice(characterName);
+            if (string.IsNullOrWhiteSpace(voice))
             {
-                _behaviour.StopCoroutine(_routine);
-                _routine = null;
+                Plugin.LogDebug($"[NativeTts] No voice for '{characterName}': line not voiced.");
+                return;
             }
 
-            if (_pendingRequest != null)
+            CancelNative();
+            _nativeRoutine = _behaviour.StartCoroutine(
+                SpeakRoutine(text.Trim(), voice, characterName, null, native: true));
+        }
+
+        /// <summary>Stops playback, aborts an in-flight request and drops the pending coroutine.</summary>
+        public void CancelPending() => CancelChannel(native: false);
+
+        /// <summary>Cuts off the native game-dialogue channel only.</summary>
+        public void CancelNative() => CancelChannel(native: true);
+
+        private void CancelChannel(bool native)
+        {
+            Coroutine routine = native ? _nativeRoutine : _routine;
+            UnityWebRequest request = native ? _nativeRequest : _pendingRequest;
+            AudioSource source = native ? _nativeAudioSource : _audioSource;
+
+            if (routine != null)
+            {
+                _behaviour.StopCoroutine(routine);
+                if (native) _nativeRoutine = null; else _routine = null;
+            }
+
+            if (request != null)
             {
                 // Stopping the coroutine skips its own Dispose(), so the in-flight request is
                 // aborted and released here — otherwise the handler would leak on every cut-off line.
-                try { _pendingRequest.Abort(); } catch (Exception) { /* already finished */ }
-                try { _pendingRequest.Dispose(); } catch (Exception) { }
-                _pendingRequest = null;
+                try { request.Abort(); } catch (Exception) { /* already finished */ }
+                try { request.Dispose(); } catch (Exception) { }
+                if (native) _nativeRequest = null; else _pendingRequest = null;
             }
 
-            if (_audioSource != null && _audioSource.isPlaying)
-                _audioSource.Stop();
+            if (source != null && source.isPlaying)
+                source.Stop();
         }
 
-        /// <summary>Releases the AudioSource clip and aborts any work in progress.</summary>
+        /// <summary>Releases the AudioSource clips and aborts any work in progress.</summary>
         public void Dispose()
         {
             CancelPending();
+            CancelNative();
 
             if (_currentClip != null)
             {
                 UnityEngine.Object.Destroy(_currentClip);
                 _currentClip = null;
             }
+
+            if (_nativeClip != null)
+            {
+                UnityEngine.Object.Destroy(_nativeClip);
+                _nativeClip = null;
+            }
         }
 
-        private void PlatformSettings()
+        private static void PlatformSettings(AudioSource source)
         {
             // Spatial audio is pointless for a single 2D voice and costs a bit of CPU.
-            _audioSource.rolloffMode = AudioRolloffMode.Linear;
-            _audioSource.priority = 0;
+            source.rolloffMode = AudioRolloffMode.Linear;
+            source.priority = 0;
         }
 
-        private IEnumerator SpeakRoutine(string text, string voice, string characterName, Action onReady)
+        /// <summary>
+        /// Requests the audio for one line and plays it.
+        ///
+        /// <paramref name="native"/> selects the channel: the AI reply (<c>false</c>) or one of the
+        /// game's own dialogue lines (<c>true</c>). Each channel has its own request, clip and
+        /// AudioSource, so the two can be in flight at the same time without cancelling each other -
+        /// the game speaks while the AI reply is still being generated. Only the AI channel reports
+        /// failures in the TTS tab: the game's dialogue is constant, and a misconfigured voice would
+        /// otherwise bury the log.
+        /// </summary>
+        private IEnumerator SpeakRoutine(string text, string voice, string characterName, Action onReady, bool native = false)
         {
-            // fish.audio: {text, reference_id, format} plus the documented tuning parameters that
-            // differ from the endpoint defaults (latency, prosody.speed, normalization).
-            string body = TtsRequestBody.Build(
-                text,
-                voice,
-                AUDIO_FORMAT,
-                _behaviour.TtsLatency,
-                _behaviour.TtsSpeed,
-                _behaviour.TtsNormalizeLoudness,
-                _behaviour.TtsNormalize);
-            byte[] bodyBytes = Encoding.UTF8.GetBytes(body);
+            // The game's own lines repeat, so they are cached on disk: a line already paid for is
+            // replayed from there in the same frame, without a request or a second charge. An AI
+            // reply is a new sentence nearly every time, so it always goes to the endpoint.
+            byte[] audioBytes = null;
+            string cacheKey = "";
+
+            if (native && _behaviour.TtsNativeCache && _cache.Enabled)
+            {
+                // The key mirrors what is actually sent: the tuning values are normalized exactly as
+                // the request body normalizes them, so two spellings of the same setting share one
+                // entry instead of storing the same audio twice.
+                cacheKey = TtsAudioCache.Key(
+                    text,
+                    voice,
+                    _behaviour.TtsApiUrl?.Trim() ?? "",
+                    _behaviour.TtsModel?.Trim() ?? "",
+                    TtsRequestBody.NormalizeLatency(_behaviour.TtsLatency),
+                    TtsRequestBody.ClampSpeed(_behaviour.TtsSpeed),
+                    _behaviour.TtsNormalizeLoudness,
+                    _behaviour.TtsNormalize);
+
+                if (_cache.TryRead(cacheKey, out audioBytes))
+                    Plugin.LogDebug($"[NativeTts] cached line ({audioBytes.Length / 1024} KB) - no request sent.");
+                else
+                {
+                    audioBytes = null;
+                    Plugin.LogDebug("[NativeTts] line not cached yet - asking the endpoint.");
+                }
+            }
+
+            // A paused circuit breaker stops new requests, not the lines already on disk.
+            if (native && audioBytes == null && TtsCircuitBreaker.IsPaused)
+            {
+                Plugin.LogDebug("[NativeTts] TTS is paused - the line stays silent.");
+                EndChannel(native);
+                yield break;
+            }
+
+            // Bodies are only built when there is something to ask for.
+            byte[] bodyBytes = null;
+            if (audioBytes == null)
+            {
+                // fish.audio: {text, reference_id, format} plus the documented tuning parameters that
+                // differ from the endpoint defaults (latency, prosody.speed, normalization).
+                string body = TtsRequestBody.Build(
+                    text,
+                    voice,
+                    AUDIO_FORMAT,
+                    _behaviour.TtsLatency,
+                    _behaviour.TtsSpeed,
+                    _behaviour.TtsNormalizeLoudness,
+                    _behaviour.TtsNormalize);
+                bodyBytes = Encoding.UTF8.GetBytes(body);
+            }
 
             // 429 and 5xx are retried (see TtsErrorLog.IsRetryable); anything else is reported at
-            // once, because retrying a 4xx can only waste the player's time.
-            for (int attempt = 1; attempt <= TtsErrorLog.MaxAttempts; attempt++)
+            // once, because retrying a 4xx can only waste the player's time. A cached line skips the
+            // loop entirely.
+            for (int attempt = 1; audioBytes == null && attempt <= TtsErrorLog.MaxAttempts; attempt++)
             {
                 var request = BuildRequest(bodyBytes);
-                _pendingRequest = request;
+                if (native) _nativeRequest = request; else _pendingRequest = request;
                 yield return request.SendWebRequest();
 
                 if (request.result != UnityWebRequest.Result.Success)
@@ -173,7 +307,7 @@ namespace DialogInterceptorMod.API
                     string errBody = request.downloadHandler?.text ?? "";
                     float retryAfter = ReadRetryAfterSeconds(request);
 
-                    _pendingRequest = null;
+                    if (native) _nativeRequest = null; else _pendingRequest = null;
                     request.Dispose();
 
                     TtsError failure = TtsErrorLog.Describe(status, errBody, attempt);
@@ -182,8 +316,9 @@ namespace DialogInterceptorMod.API
                     if (failure.Retryable && attempt < TtsErrorLog.MaxAttempts)
                     {
                         float delay = TtsErrorLog.RetryDelaySeconds(attempt, retryAfter);
-                        _behaviour.Window?.SetStatus(
-                            $"[TTS] {failure.Title} - retrying in {delay:0.0}s (attempt {attempt + 1}/{TtsErrorLog.MaxAttempts})...", true);
+                        if (!native)
+                            _behaviour.Window?.SetStatus(
+                                $"[TTS] {failure.Title} - retrying in {delay:0.0}s (attempt {attempt + 1}/{TtsErrorLog.MaxAttempts})...", true);
                         yield return new WaitForSecondsRealtime(delay);
                         continue;
                     }
@@ -194,20 +329,25 @@ namespace DialogInterceptorMod.API
 
                     // Out of attempts (or not retryable): keep the failure in the TTS tab log, tell
                     // the player, and release the reply. A broken voice must never swallow a line.
-                    TtsErrorLog.Record(failure);
-                    if (pausedNow)
+                    // A native line is only logged: the game speaks constantly and it must stay quiet.
+                    if (!native)
                     {
-                        Plugin.LogWarning(
-                            $"TTS paused after {TtsCircuitBreaker.ConsecutiveFailures} consecutive failures: {TtsCircuitBreaker.Reason}");
-                        TtsErrorLog.RecordLocal(
-                            TtsCircuitBreaker.PausedTitle,
-                            TtsCircuitBreaker.PausedMeaning,
-                            TtsCircuitBreaker.PausedAdvice);
+                        TtsErrorLog.Record(failure);
+                        if (pausedNow)
+                        {
+                            Plugin.LogWarning(
+                                $"TTS paused after {TtsCircuitBreaker.ConsecutiveFailures} consecutive failures: {TtsCircuitBreaker.Reason}");
+                            TtsErrorLog.RecordLocal(
+                                TtsCircuitBreaker.PausedTitle,
+                                TtsCircuitBreaker.PausedMeaning,
+                                TtsCircuitBreaker.PausedAdvice);
+                        }
+
+                        _behaviour.Window?.SetStatus(TtsErrorLog.ToStatusLine(failure), true);
                     }
 
-                    _behaviour.Window?.SetStatus(TtsErrorLog.ToStatusLine(failure), true);
                     onReady?.Invoke();
-                    _routine = null;
+                    EndChannel(native);
                     yield break;
                 }
 
@@ -217,74 +357,116 @@ namespace DialogInterceptorMod.API
                 if (attempt > 1)
                     Plugin.LogInfo($"TTS: the request succeeded on attempt {attempt}.");
 
-                byte[] audioBytes = request.downloadHandler.data;
-                _pendingRequest = null;
+                byte[] downloaded = request.downloadHandler.data;
+                if (native) _nativeRequest = null; else _pendingRequest = null;
                 request.Dispose();
 
-                if (audioBytes == null || audioBytes.Length == 0)
+                if (downloaded == null || downloaded.Length == 0)
                 {
                     ReportFailure("Empty audio response",
                         "fish.audio accepted the request but returned no audio data.",
-                        "Retry the line; if it repeats, check the Model in CONFIG > [TTS].");
+                        "Retry the line; if it repeats, check the Model in CONFIG > [TTS].",
+                        native);
                     onReady?.Invoke();
-                    _routine = null;
+                    EndChannel(native);
                     yield break;
                 }
 
-                // Unity cannot decode MP3 from an in-memory buffer, so the bytes are written to a
-                // temporary file and loaded through the documented file-URL path.
-                string tempPath = Path.Combine(Application.temporaryCachePath, "hlhn_tts_" + Sanitize(characterName) + "." + AUDIO_FORMAT);
-                try
-                {
-                    File.WriteAllBytes(tempPath, audioBytes);
-                }
-                catch (Exception ex)
-                {
-                    ReportFailure("Could not write the audio file",
-                        $"The temporary MP3 could not be written to disk ({ex.Message}).",
-                        "Check free space and permissions on the game's temporary cache folder.");
-                    onReady?.Invoke();
-                    _routine = null;
-                    yield break;
-                }
+                // The audio is in hand: playback happens below, shared with the cached path.
+                audioBytes = downloaded;
+                break;
+            }
 
-                string fileUrl = "file:///" + tempPath.Replace('\\', '/');
-
-                var clipRequest = UnityWebRequestMultimedia.GetAudioClip(fileUrl, AUDIO_TYPE);
-                _pendingRequest = clipRequest;
-                yield return clipRequest.SendWebRequest();
-
-                if (clipRequest.result != UnityWebRequest.Result.Success)
-                {
-                    string decodeError = clipRequest.error;
-                    _pendingRequest = null;
-                    clipRequest.Dispose();
-                    ReportFailure("Could not decode the audio",
-                        $"The MP3 returned by fish.audio could not be decoded ({decodeError}).",
-                        "Check that the API URL points at fish.audio > /v1/tts, then retry the line.");
-                    onReady?.Invoke();
-                    _routine = null;
-                    yield break;
-                }
-
-                AudioClip clip = DownloadHandlerAudioClip.GetContent(clipRequest);
-                _pendingRequest = null;
-                clipRequest.Dispose();
-
-                if (clip == null)
-                {
-                    ReportFailure("Decoded audio is empty",
-                        "fish.audio returned audio that Unity could not turn into a playable clip.",
-                        "Retry the line; if it repeats, check the Model in CONFIG > [TTS].");
-                    onReady?.Invoke();
-                    _routine = null;
-                    yield break;
-                }
-
-                PlayClip(clip, onReady);
-                _routine = null;
+            // Unreachable while MaxAttempts is at least 1 - a failed attempt ends the routine - but the
+            // loop must never fall through to playback without audio.
+            if (audioBytes == null)
+            {
+                EndChannel(native);
                 yield break;
             }
+
+            yield return PlayAudioRoutine(audioBytes, characterName, onReady, native);
+
+            // Keep the line for the next time it is said (the game's own lines only: an AI reply is
+            // nearly always a new sentence, and would evict the lines that are worth keeping). Only
+            // audio that played is stored.
+            bool played = native ? _nativePlaybackOk : _playbackOk;
+            if (played && cacheKey.Length > 0 && _cache.Store(cacheKey, audioBytes))
+                Plugin.LogDebug($"[NativeTts] line cached ({audioBytes.Length / 1024} KB).");
+
+            EndChannel(native);
+        }
+
+        /// <summary>
+        /// Plays one line's audio: the bytes go to a temporary file, which is then decoded and played.
+        /// Unity cannot decode MP3 from an in-memory buffer, so the documented file-URL path is used.
+        ///
+        /// Both sources of audio run through here - the endpoint's answer and a cached line - and the
+        /// cached one is written to the temporary file rather than decoded in place, because an
+        /// eviction may delete the stored file at any moment.
+        /// </summary>
+        private IEnumerator PlayAudioRoutine(byte[] audioBytes, string characterName, Action onReady, bool native)
+        {
+            if (native) _nativePlaybackOk = false; else _playbackOk = false;
+
+            string tempPath = Path.Combine(Application.temporaryCachePath,
+                (native ? "hlhn_tts_native_" : "hlhn_tts_") + Sanitize(characterName) + "." + AUDIO_FORMAT);
+            try
+            {
+                File.WriteAllBytes(tempPath, audioBytes);
+            }
+            catch (Exception ex)
+            {
+                ReportFailure("Could not write the audio file",
+                    $"The temporary MP3 could not be written to disk ({ex.Message}).",
+                    "Check free space and permissions on the game's temporary cache folder.",
+                    native);
+                onReady?.Invoke();
+                yield break;
+            }
+
+            string fileUrl = "file:///" + tempPath.Replace('\\', '/');
+
+            var clipRequest = UnityWebRequestMultimedia.GetAudioClip(fileUrl, AUDIO_TYPE);
+            if (native) _nativeRequest = clipRequest; else _pendingRequest = clipRequest;
+            yield return clipRequest.SendWebRequest();
+
+            if (clipRequest.result != UnityWebRequest.Result.Success)
+            {
+                string decodeError = clipRequest.error;
+                if (native) _nativeRequest = null; else _pendingRequest = null;
+                clipRequest.Dispose();
+                ReportFailure("Could not decode the audio",
+                    $"The MP3 returned by fish.audio could not be decoded ({decodeError}).",
+                    "Check that the API URL points at fish.audio > /v1/tts, then retry the line.",
+                    native);
+                onReady?.Invoke();
+                yield break;
+            }
+
+            AudioClip clip = DownloadHandlerAudioClip.GetContent(clipRequest);
+            if (native) _nativeRequest = null; else _pendingRequest = null;
+            clipRequest.Dispose();
+
+            if (clip == null)
+            {
+                ReportFailure("Decoded audio is empty",
+                    "fish.audio returned audio that Unity could not turn into a playable clip.",
+                    "Retry the line; if it repeats, check the Model in CONFIG > [TTS].",
+                    native);
+                onReady?.Invoke();
+                yield break;
+            }
+
+            PlayClip(clip, onReady, native);
+            if (native) _nativePlaybackOk = true; else _playbackOk = true;
+        }
+
+        /// <summary>Marks the channel's coroutine as finished (it is stopped from outside only).</summary>
+        private void EndChannel(bool native)
+        {
+            if (native) _nativeRoutine = null;
+            else _routine = null;
         }
 
         /// <summary>Builds the POST that asks fish.audio for the audio bytes of one reply.</summary>
@@ -317,31 +499,43 @@ namespace DialogInterceptorMod.API
         /// Records a failure that has no HTTP status (misconfiguration, empty answer, disk error,
         /// undecodable audio) in the same visible log, and mirrors it on the status line.
         /// </summary>
-        private void ReportFailure(string title, string meaning, string advice)
+        private void ReportFailure(string title, string meaning, string advice, bool native = false)
         {
+            if (native)
+            {
+                // The visible log is for the AI replies; a native line only leaves a debug trace.
+                Plugin.LogDebug($"[NativeTts] {title}: {meaning}");
+                return;
+            }
+
             TtsError failure = TtsErrorLog.RecordLocal(title, meaning, advice);
             Plugin.LogError($"TTS error: {failure.Title} | {failure.Meaning}");
             _behaviour.Window?.SetStatus(TtsErrorLog.ToStatusLine(failure), true);
         }
 
-        private void PlayClip(AudioClip clip, Action onReady)
+        private void PlayClip(AudioClip clip, Action onReady, bool native = false)
         {
-            if (_currentClip != null)
+            AudioSource source = native ? _nativeAudioSource : _audioSource;
+            AudioClip previous = native ? _nativeClip : _currentClip;
+
+            if (previous != null)
             {
                 // Clips created by UnityWebRequestMultimedia are not garbage collected: the previous
                 // one has to be destroyed explicitly or it leaks every time the NPC speaks.
-                UnityEngine.Object.Destroy(_currentClip);
-                _currentClip = null;
+                UnityEngine.Object.Destroy(previous);
             }
 
-            _currentClip = clip;
-            _audioSource.volume = Mathf.Clamp01(_behaviour.TtsVolume);
-            _audioSource.clip = clip;
+            if (native) _nativeClip = clip; else _currentClip = clip;
+
+            source.volume = Mathf.Clamp01(_behaviour.TtsVolume);
+            source.clip = clip;
 
             // Reveal the on-screen reply at the same instant the voice starts.
             onReady?.Invoke();
-            _audioSource.Play();
-            Plugin.LogDebug($"TTS: playing {clip.length:F1}s of audio for the reply.");
+            source.Play();
+            Plugin.LogDebug(native
+                ? $"[NativeTts] playing {clip.length:F1}s of game dialogue."
+                : $"TTS: playing {clip.length:F1}s of audio for the reply.");
         }
 
         /// <summary>Keeps the temp file name safe for any character name (main NPC or random).</summary>

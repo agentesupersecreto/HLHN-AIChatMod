@@ -76,6 +76,8 @@ namespace DialogInterceptorMod.UI
         private string _editTtsModel;
         private string _editTtsVoiceDefault;
         private bool _editTtsDistinctNpcVoices = true;
+        private bool _editTtsGameDialogues;
+        private bool _editTtsNativeCache = true;
         private float _editTtsVolume = 1f;
         private string _editTtsLatency = API.TtsRequestBody.DefaultLatency;
         private float _editTtsSpeed = API.TtsRequestBody.DefaultSpeed;
@@ -667,6 +669,14 @@ namespace DialogInterceptorMod.UI
                 ? DialogBehaviour.DefaultNpcVoice
                 : _editTtsVoiceDefault.Trim();
             _behaviour.TtsDistinctNpcVoices = _editTtsDistinctNpcVoices;
+
+            // Switching the game's own dialogue on starts with a clean slate: the last line the mod
+            // spoke must not pass for a repeat of the first one.
+            if (_editTtsGameDialogues && !_behaviour.TtsGameDialogues)
+                Game.NativeDialogueTts.ResetCounter();
+            _behaviour.TtsGameDialogues = _editTtsGameDialogues;
+            _behaviour.TtsNativeCache = _editTtsNativeCache;
+
             _behaviour.TtsVolume       = Mathf.Clamp01(_editTtsVolume);
             _behaviour.TtsLatency      = API.TtsRequestBody.NormalizeLatency(_editTtsLatency);
             _behaviour.TtsSpeed        = API.TtsRequestBody.ClampSpeed(_editTtsSpeed);
@@ -789,6 +799,23 @@ namespace DialogInterceptorMod.UI
             }
 
             GUILayout.Space(8);
+            GUILayout.Label("Game dialogue (lines written by the game, not by the AI):", ChatStyles.SectionStyle);
+            // Off by default: the game speaks constantly, and every line is a separate paid request.
+            DrawCmdToggle("Default Game Dialogues", ref _editTtsGameDialogues);
+            GUILayout.Label(_editTtsGameDialogues
+                ? "The game's own lines are read out loud with the voices above: Talk About / Compliment / Critic replies, gifts, kisses and other events, the jail Police, and the Sex-Talk lines. Each line is one request to fish.audio."
+                : "Only the AI replies are voiced. Turn this on to also hear the game's own lines (Talk About / Compliment / Critic replies, gifts, kisses, events, the jail Police and the Sex-Talk lines).",
+                ChatStyles.FooterStyle);
+
+            DrawCmdToggle("Cache game dialogue audio", ref _editTtsNativeCache);
+            GUILayout.Label(_editTtsNativeCache
+                ? "Each line is kept in tts_cache the first time it is spoken; saying it again plays in the same frame, without a request or a second charge. Only these lines are cached (the AI writes new sentences)."
+                : "Every line is requested again, even one the character has already said.",
+                ChatStyles.FooterStyle);
+
+            DrawTtsCacheStatus();
+
+            GUILayout.Space(8);
             if (GUILayout.Button("Apply & Save", ChatStyles.ActiveButtonStyle))
             {
                 ApplyAllSettings();
@@ -848,6 +875,44 @@ namespace DialogInterceptorMod.UI
                 SetStatus("[TTS] Resumed. The next reply will use the current settings.", false);
             }
             GUILayout.EndHorizontal();
+        }
+
+        /// <summary>
+        /// Shows what the game-dialogue cache holds and lets it be emptied. The size is what tells the
+        /// user the folder is being maintained (the cache trims itself to stay under its cap), and the
+        /// clear button is there for someone who wants the disk space back or a fresh voice setup.
+        /// </summary>
+        private void DrawTtsCacheStatus()
+        {
+            API.TtsAudioCache cache = _behaviour.Tts?.Cache;
+            if (cache == null || !cache.Enabled)
+            {
+                GUILayout.Label("Cache: unavailable (the config folder could not be resolved).", ChatStyles.FooterStyle);
+                return;
+            }
+
+            API.TtsAudioCache.CacheStats stats = cache.Stats();
+
+            GUILayout.BeginHorizontal();
+            GUILayout.Label(
+                $"Cache: {stats.Count} lines, {FormatBytes(stats.Bytes)} of {FormatBytes(cache.MaxBytes)}",
+                ChatStyles.FooterStyle, GUILayout.ExpandWidth(true));
+
+            if (stats.Count > 0 && GUILayout.Button("[Clear cache]", ChatStyles.ButtonStyle, GUILayout.Width(96)))
+            {
+                cache.Clear();
+                SetStatus($"[TTS] Cache cleared ({FormatBytes(stats.Bytes)} freed).", false);
+            }
+            GUILayout.EndHorizontal();
+        }
+
+        /// <summary>Folder size in the largest unit that keeps it readable.</summary>
+        private static string FormatBytes(long bytes)
+        {
+            if (bytes >= 1024L * 1024 * 1024) return $"{bytes / (1024f * 1024f * 1024f):0.0} GB";
+            if (bytes >= 1024L * 1024) return $"{bytes / (1024f * 1024f):0.0} MB";
+            if (bytes >= 1024L) return $"{bytes / 1024f:0} KB";
+            return bytes + " B";
         }
 
         /// <summary>
@@ -912,6 +977,8 @@ namespace DialogInterceptorMod.UI
             _editTtsModel        = _behaviour.TtsModel;
             _editTtsVoiceDefault = _behaviour.TtsVoiceDefault;
             _editTtsDistinctNpcVoices = _behaviour.TtsDistinctNpcVoices;
+            _editTtsGameDialogues     = _behaviour.TtsGameDialogues;
+            _editTtsNativeCache       = _behaviour.TtsNativeCache;
             _editTtsVolume       = _behaviour.TtsVolume;
             _editTtsLatency      = API.TtsRequestBody.NormalizeLatency(_behaviour.TtsLatency);
             _editTtsSpeed        = API.TtsRequestBody.ClampSpeed(_behaviour.TtsSpeed);
@@ -1195,6 +1262,8 @@ namespace DialogInterceptorMod.UI
                     $"TtsModel={_behaviour.TtsModel}",
                     $"TtsVoiceDefault={_behaviour.TtsVoiceDefault}",
                     $"TtsDistinctNpcVoices={_behaviour.TtsDistinctNpcVoices}",
+                    $"TtsGameDialogues={_behaviour.TtsGameDialogues}",
+                    $"TtsNativeCache={_behaviour.TtsNativeCache}",
                     $"TtsVolume={_behaviour.TtsVolume.ToString(System.Globalization.CultureInfo.InvariantCulture)}",
                     $"TtsLatency={_behaviour.TtsLatency}",
                     $"TtsSpeed={_behaviour.TtsSpeed.ToString(System.Globalization.CultureInfo.InvariantCulture)}",
@@ -1334,6 +1403,17 @@ namespace DialogInterceptorMod.UI
                             // Absent from older inis: keep the shipped default (on).
                             if (bool.TryParse(val, out bool distinctVoices))
                                 _behaviour.TtsDistinctNpcVoices = distinctVoices;
+                            break;
+                        case "TtsGameDialogues":
+                            // Absent from older inis: keep the shipped default (off, as every one of
+                            // those lines is a separate paid request).
+                            if (bool.TryParse(val, out bool gameDialogues))
+                                _behaviour.TtsGameDialogues = gameDialogues;
+                            break;
+                        case "TtsNativeCache":
+                            // Absent from older inis: keep the shipped default (on).
+                            if (bool.TryParse(val, out bool nativeCache))
+                                _behaviour.TtsNativeCache = nativeCache;
                             break;
                         case "TtsVolume":
                             if (float.TryParse(val, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float ttsVol))

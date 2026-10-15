@@ -106,6 +106,8 @@ Press **F9** and click `[CONFIG]` to configure settings:
 | TtsModel | `s2.1-pro-free` | fish.audio model id |
 | TtsVoiceDefault | `22bff164a7104976ba3ade3b7ec1877c` | Voice used when the speaker has no name, and by every random NPC if `TtsDistinctNpcVoices` is off |
 | TtsDistinctNpcVoices | `true` | Gives each random NPC a voice of her own out of a pool of 8, instead of all of them sharing `TtsVoiceDefault` |
+| TtsGameDialogues | `false` | Also reads out loud the game's own dialogue (Talk About / Compliment / Critic replies, gifts, kisses, events, the jail Police, and the Sex-Talk lines) with the same voices |
+| TtsNativeCache | `true` | Keeps the audio of those lines in `BepInEx/config/AIChat/tts_cache`: saying a line again plays it instantly, without a second request |
 | Voice_\<Character\> | per character | Voice `reference_id` for each main character (Stacy, Laura, Susan, Katherine) |
 | TtsVolume | `1` | Voice playback volume (`0` – `1`) |
 | TtsLatency | `normal` | fish.audio `latency`: `low`, `balanced` or `normal`. Lower answers sooner (a bit less quality) — the on-screen reply waits for the voice, so it also shows up sooner |
@@ -125,6 +127,37 @@ ee2fa25a56364be9a80d0028eecc6ea4   f7f74a4bc4324c25b96b9b6741a72ab3
 ```
 
 Voices are handed out least-used-first, and a scene holds at most six NPCs, so the NPCs you meet side by side do not sound alike. The `[CONFIG] → [TTS]` tab lists the pool next to the NPC that currently holds each voice, and turning the option off makes every random NPC fall back to `TtsVoiceDefault`. The main characters always keep the voice set in their own slot.
+
+### Default Game Dialogues (`TtsGameDialogues`)
+
+By default the mod only voices what the AI writes. Turn **`Default Game Dialogues`** on in `[CONFIG] → [TTS]` and it also voices the lines the **game itself** writes, using the same voices as the AI replies (a main character her own slot, every other character her random-NPC voice, the jail **Police** hers):
+
+* the speech bubbles - Talk About / Compliment / Critic replies, gifts, kisses, the random NPC chatter;
+* the dialogue box - scripted events, quest lines, the Police, clothing and item interactions;
+* the **Sex-Talk** windows (`SexDialogue`, `CumDialogue`, `ThreesomeSexDialogue`) - the comments a character makes while she is in sex mode.
+
+Every **Sex-Talk line is sent with the `[moaning]` tag in front**, so the voice performs it as a moan instead of reading it flat. fish.audio reads everything after a bracket tag in that style, and the tag sits at the very start of the line for exactly that reason (the game's own bracketed hints – `[sexTalk]` – are removed first, so the two never collide). It applies to every one of those lines, on every character, whenever they are voiced.
+
+`[moaning]` is a *free-form* tag: the documented core set is `[whisper]`, `[laugh]`, `[sigh]`, `[gasp]` and `[pause]`, and the model accepts any description in brackets but renders free-form ones less consistently. If the tag ever comes out flat or gets read out loud, it is a single constant to change (`GameDialogueText.SexTalkTag`), and switching `TtsNormalize` off in the TTS tab is the other knob worth trying. The tag is part of what the cache stores, so a moaned line and the same words spoken normally stay separate entries.
+
+It is **off by default** because the game speaks constantly and every one of those lines is a separate paid request to fish.audio: a party, a room full of NPCs or a single sex scene spends far more than an AI conversation does.
+
+Three rules keep it from misbehaving. A line is only voiced if the game actually **showed** it (the bubble was free, the box was not still busy, Sex-Talk is enabled in the game's own UI). The speaker decides the voice, so the player, `whispers`, `Me`, the narrator and the game's speaker-less narration (`Laura is here`, `Your lust has run out`) stay silent, and a `...` or `***` line is not worth a request. Finally, the same sentence shown again within a moment is voiced once, not twice. AI replies are never sent to the endpoint a second time and never echoed into the chat context.
+
+### Game dialogue cache (`TtsNativeCache`)
+
+The game reuses a **small, fixed set of lines**: a character's Talk About / Compliment / Critic comments (9 topics + 8 compliments + 8 critics per main character, straight from her bundle), her greetings, her kiss replies and her Sex-Talk phrases. Who ends up using which set does not matter — the main characters, the random NPCs that share a set and the jail Police (whose set is assigned at runtime) all get the same benefit, because an entry is keyed by the line **and** the voice rather than by character. Without a cache each of those lines is a fresh request: a second or two of silence before the voice starts, and a second charge for a sentence already heard.
+
+So the mod keeps the audio it has already generated in `BepInEx/config/AIChat/tts_cache`, named after a hash of the line plus everything that changes the audio (voice, endpoint, model, latency, speed, normalization):
+
+* the second time a line is said it plays **in the same frame** — no request, no retry, no charge;
+* changing a voice or a setting just stores new entries next to the old ones;
+* the folder keeps itself under **200 MB** by deleting the least recently used entries (a line just played is the last to go);
+* the TTS tab shows `Cache: N lines, X MB of 200 MB` with a **`[Clear cache]`** button;
+* only the game's lines are cached: an AI reply is a new sentence nearly every time, and caching those would fill the folder with one-use files;
+* a cached line is free, so it still plays while TTS is paused by the circuit breaker (only new requests are blocked).
+
+Turning **`Cache game dialogue audio`** off requests every line again, even one the character has already said.
 
 The **TTS Error Log** at the bottom of `[CONFIG] → [TTS]` shows the last fish.audio failures with what they mean and what to do about them; `429` and `5xx` responses are retried up to 3 times with exponential backoff (honouring `Retry-After`), while other `4xx` codes are reported immediately because retrying cannot fix them. Every failure is also written to the BepInEx log.
 

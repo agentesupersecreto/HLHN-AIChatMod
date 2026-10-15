@@ -29,6 +29,12 @@ namespace DialogInterceptorMod.Core
         public const string HistoryDirName = "history";
 
         /// <summary>
+        /// Folder holding the generated audio of the game's own dialogue lines, inside
+        /// <see cref="ConfigDir"/> (see <see cref="API.TtsAudioCache"/>).
+        /// </summary>
+        public const string TtsCacheDirName = "tts_cache";
+
+        /// <summary>
         /// Folder holding every user file of the mod (settings, prompts, memory, history):
         /// BepInEx/config/AIChat. Created on demand so the user always has the files to edit.
         /// </summary>
