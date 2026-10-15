@@ -62,9 +62,10 @@ Go to https://aistudio.google.com/api-keys and create an API key (you must creat
 **IMPORTANT**: Local AI models are resource-intensive. Ensure you have a mid-to-high-end PC with a graphics card with at least 8 GB of VRAM; 12 GB or more is recommended. Avoid using extremely lightweight or older AI models, as responses will degrade. The recommended AI model for this mod is lightweight; it isn't very smart, but it works well for roleplay. If you have a graphics card with 12 or 16 GB of VRAM, it's better to use a Gemma-4 model, but the “abliterated” version.
 
 **For TTS**:
-1. Go to https://fish.audio/es/app/api-keys, log in or sign up, click <b>Create API key</b>, copy it
-2. Open the game, press F9, go to CONFIG → TTS, set <i>Enable TTS</i> to ON, paste your API key into the API key field then click <i>Apply and save</i>.
-If you want to change a voice, go to https://fish.audio/app/playground/ select **Select voice** > **More voices** > **Explore**. There, you can filter by language, search for a voice of a celebrity or character, etc. Once you've chosen a voice, select **Use**. On the right side, you’ll see text that includes a "reference_id" parameter. Copy the ID (for example: 98655a12fa944e26b274c535e5e03842) and paste it to replace the voice of your choice in the TTS settings on the F9 panel.
+1. Go to https://fish.audio/es/app/api-keys > log in or sign up > click <b>Create API key</b> > copy it
+2. Open the game > press F9 > go to CONFIG → TTS > set **Enable TTS** to **ON** > paste your API key into the API key field > then click **Apply and save**.
+
+If you want to change a voice, go to https://fish.audio/app/playground/ > select **Select voice** > **More voices** > **Explore** > There, you can filter by language, search for a voice of a celebrity or character, etc. Once you've chosen a voice, select **Use**. On the right side, you’ll see text that includes a "reference_id" parameter. Copy the ID (for example: 98655a12fa944e26b274c535e5e03842) and paste it to replace the voice of your choice in the TTS settings on the F9 panel.
 
 ### Third Step - Use
 
