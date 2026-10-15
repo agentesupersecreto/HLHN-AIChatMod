@@ -52,11 +52,23 @@ namespace DialogInterceptorMod.API
         /// A 429 or 5xx answer is retried with exponential backoff before the reply is released
         /// (see <see cref="TtsErrorLog"/>); every failure is reported both in the BepInEx log and in
         /// the visible TTS error log.
+        ///
+        /// While <see cref="TtsCircuitBreaker"/> is paused no request is sent at all - the reply is
+        /// still released, so the line shows up (without voice) instead of hanging.
         /// </summary>
         public void Speak(string text, string characterName, Action onReady)
         {
             if (!_behaviour.TtsEnabled) { onReady?.Invoke(); return; }
             if (string.IsNullOrWhiteSpace(text)) { onReady?.Invoke(); return; }
+
+            // Repeated fatal failures (wrong key, no credits, bad voice id) would fail for every
+            // line: stop calling the endpoint and tell the player instead of retrying forever.
+            if (TtsCircuitBreaker.IsPaused)
+            {
+                _behaviour.Window?.SetStatus(TtsCircuitBreaker.StatusLine, true);
+                onReady?.Invoke();
+                return;
+            }
 
             if (string.IsNullOrWhiteSpace(_behaviour.TtsApiUrl))
             {
@@ -133,8 +145,16 @@ namespace DialogInterceptorMod.API
 
         private IEnumerator SpeakRoutine(string text, string voice, string characterName, Action onReady)
         {
-            // fish.audio: {text, reference_id, format}. The voice id goes in the JSON body.
-            string body = $"{{\"text\":\"{JsonHelper.EscapeJson(text)}\",\"reference_id\":\"{JsonHelper.EscapeJson(voice)}\",\"format\":\"{AUDIO_FORMAT}\"}}";
+            // fish.audio: {text, reference_id, format} plus the documented tuning parameters that
+            // differ from the endpoint defaults (latency, prosody.speed, normalization).
+            string body = TtsRequestBody.Build(
+                text,
+                voice,
+                AUDIO_FORMAT,
+                _behaviour.TtsLatency,
+                _behaviour.TtsSpeed,
+                _behaviour.TtsNormalizeLoudness,
+                _behaviour.TtsNormalize);
             byte[] bodyBytes = Encoding.UTF8.GetBytes(body);
 
             // 429 and 5xx are retried (see TtsErrorLog.IsRetryable); anything else is reported at
@@ -168,14 +188,31 @@ namespace DialogInterceptorMod.API
                         continue;
                     }
 
+                    // Counted before it is stored: a fatal failure repeated to the limit pauses TTS,
+                    // which is recorded as its own entry so the reason stays visible in the tab.
+                    bool pausedNow = TtsCircuitBreaker.RecordFailure(failure);
+
                     // Out of attempts (or not retryable): keep the failure in the TTS tab log, tell
                     // the player, and release the reply. A broken voice must never swallow a line.
                     TtsErrorLog.Record(failure);
+                    if (pausedNow)
+                    {
+                        Plugin.LogWarning(
+                            $"TTS paused after {TtsCircuitBreaker.ConsecutiveFailures} consecutive failures: {TtsCircuitBreaker.Reason}");
+                        TtsErrorLog.RecordLocal(
+                            TtsCircuitBreaker.PausedTitle,
+                            TtsCircuitBreaker.PausedMeaning,
+                            TtsCircuitBreaker.PausedAdvice);
+                    }
+
                     _behaviour.Window?.SetStatus(TtsErrorLog.ToStatusLine(failure), true);
                     onReady?.Invoke();
                     _routine = null;
                     yield break;
                 }
+
+                // The endpoint answered: whatever failed before is no longer a repeat failure.
+                TtsCircuitBreaker.RecordSuccess();
 
                 if (attempt > 1)
                     Plugin.LogInfo($"TTS: the request succeeded on attempt {attempt}.");

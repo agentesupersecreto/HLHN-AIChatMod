@@ -55,7 +55,10 @@ Go to https://aistudio.google.com/api-keys and create an API key (you must creat
 
 **IMPORTANT**: Local AI models are resource-intensive. Ensure you have a mid-to-high-end PC with a graphics card with at least 8 GB of VRAM; 12 GB or more is recommended. Avoid using extremely lightweight or older AI models, as responses will degrade. The recommended AI model for this mod is lightweight; it isn't very smart, but it works well for roleplay. If you have a graphics card with 12 or 16 GB of VRAM, it's better to use a Gemma-4 model, but the “abliterated” version.
 
-**For TTS**: 
+**For TTS**:
+1. Go to https://fish.audio/es/app/api-keys, log in or sign up, click <b>Create API key</b>, copy it
+2. Open the game, press F9, go to CONFIG → TTS, set <i>Enable TTS</i> to ON, paste your API key into the API key field then click <i>Apply and save</i>.
+If you want to change a voice, go to https://fish.audio/app/playground/ select **Select voice** > **More voices** > **Explore**. There, you can filter by language, search for a voice of a celebrity or character, etc. Once you've chosen a voice, select **Use**. On the right side, you’ll see text that includes a "reference_id" parameter. Copy the ID (for example: 98655a12fa944e26b274c535e5e03842) and paste it to replace the voice of your choice in the TTS settings on the F9 panel.
 
 ### Third Step - Use
 
@@ -101,11 +104,31 @@ Press **F9** and click `[CONFIG]` to configure settings:
 | TtsApiUrl | `https://api.fish.audio/v1/tts` | fish.audio TTS endpoint |
 | TtsApiKey | *(empty)* | fish.audio API key ([fish.audio/app/api-keys](https://fish.audio/app/api-keys)) |
 | TtsModel | `s2.1-pro-free` | fish.audio model id |
-| TtsVoiceDefault | `22bff164a7104976ba3ade3b7ec1877c` | Voice of the random NPCs: any character other than Stacy, Laura, Susan and Katherine |
+| TtsVoiceDefault | `22bff164a7104976ba3ade3b7ec1877c` | Voice used when the speaker has no name, and by every random NPC if `TtsDistinctNpcVoices` is off |
+| TtsDistinctNpcVoices | `true` | Gives each random NPC a voice of her own out of a pool of 8, instead of all of them sharing `TtsVoiceDefault` |
 | Voice_\<Character\> | per character | Voice `reference_id` for each main character (Stacy, Laura, Susan, Katherine) |
 | TtsVolume | `1` | Voice playback volume (`0` – `1`) |
+| TtsLatency | `normal` | fish.audio `latency`: `low`, `balanced` or `normal`. Lower answers sooner (a bit less quality) — the on-screen reply waits for the voice, so it also shows up sooner |
+| TtsSpeed | `1` | Speaking speed, fish.audio `prosody.speed` (`0.5` – `1.5`) |
+| TtsNormalizeLoudness | `true` | fish.audio `prosody.normalize_loudness`: evens out the loudness between lines |
+| TtsNormalize | `true` | Server-side text normalization, which makes fish.audio read numbers properly |
+
+Only the parameters that differ from the endpoint defaults are sent, so a default setup posts the same minimal body as before.
+
+A **random NPC** is any character other than the four main ones (Katherine, Susan, Stacy, Laura). With `TtsDistinctNpcVoices` on (the default) each of them is handed one of these eight voices the first time she speaks, and keeps it for the session:
+
+```
+f80f728df4c243bca79cd8dd0b57cac4   83c19893c4974594839bd2d101b1fd66
+ee2fa25a56364be9a80d0028eecc6ea4   f7f74a4bc4324c25b96b9b6741a72ab3
+935a4dbcc15541f480e33a41107ca498   512931bc4ae747edb22787ec9d273879
+15f55a723f094e188bd075eb0e9eff85   bf189034a74f4ce6a4c7bd5f28398c52
+```
+
+Voices are handed out least-used-first, and a scene holds at most six NPCs, so the NPCs you meet side by side do not sound alike. The `[CONFIG] → [TTS]` tab lists the pool next to the NPC that currently holds each voice, and turning the option off makes every random NPC fall back to `TtsVoiceDefault`. The main characters always keep the voice set in their own slot.
 
 The **TTS Error Log** at the bottom of `[CONFIG] → [TTS]` shows the last fish.audio failures with what they mean and what to do about them; `429` and `5xx` responses are retried up to 3 times with exponential backoff (honouring `Retry-After`), while other `4xx` codes are reported immediately because retrying cannot fix them. Every failure is also written to the BepInEx log.
+
+If the same fatal failure (for example `401` with a wrong key, `402` with no credits, or `404` with a bad voice) repeats **3 times in a row**, TTS **pauses**: no further requests are sent, the tab shows `TTS PAUSED` with the reason, and `[Retry now]` resumes it. Re-applying the settings also resumes it. A reply that goes through resets the counter, and the dialogue lines themselves keep showing (without voice) while paused.
 
 ---
 

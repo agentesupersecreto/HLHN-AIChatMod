@@ -69,20 +69,57 @@ namespace DialogInterceptorMod.Core
         /// <summary>
         /// Voice shipped for the random/secondary NPCs: every character that is NOT one of the
         /// <see cref="MainCharacters"/> below. It is what the "Default NPC Voice" field holds out of
-        /// the box, and what an empty field falls back to (see <see cref="TtsVoiceDefault"/>).
+        /// the box, what an empty field falls back to (see <see cref="TtsVoiceDefault"/>), and what
+        /// those NPCs use while <see cref="TtsDistinctNpcVoices"/> is off.
         /// </summary>
         public const string DefaultNpcVoice = "22bff164a7104976ba3ade3b7ec1877c";
 
         /// <summary>
-        /// Shared voice for the random/secondary NPCs. Changes made in the TTS tab are saved in the
-        /// ini; a value found there overrides <see cref="DefaultNpcVoice"/>.
+        /// Shared voice for the random/secondary NPCs, used only while
+        /// <see cref="TtsDistinctNpcVoices"/> is off. Changes made in the TTS tab are saved in the ini;
+        /// a value found there overrides <see cref="DefaultNpcVoice"/>.
         /// </summary>
         public string TtsVoiceDefault = DefaultNpcVoice;
+
+        /// <summary>
+        /// When on (the default), every random NPC gets her own voice out of
+        /// <see cref="API.NpcVoiceAssigner.VoicePool"/> instead of sharing <see cref="TtsVoiceDefault"/>:
+        /// a scene holds at most six NPCs, and the pool has eight voices, so the ones met side by side
+        /// do not sound alike. The voice sticks to the NPC's name for the session.
+        /// </summary>
+        public bool TtsDistinctNpcVoices = true;
+
+        /// <summary>
+        /// Picks (and remembers) the voice of each random NPC; see <see cref="API.NpcVoiceAssigner"/>.
+        /// </summary>
+        public API.NpcVoiceAssigner NpcVoices { get; } = new API.NpcVoiceAssigner();
+
         public float TtsVolume = 1f;
 
         /// <summary>
+        /// Latency/quality trade-off sent to fish.audio: low, balanced or normal (see
+        /// <see cref="API.TtsRequestBody"/>). Anything lower answers sooner - and makes the on-screen
+        /// reply, which waits for the voice, show up sooner too.
+        /// </summary>
+        public string TtsLatency = API.TtsRequestBody.DefaultLatency;
+
+        /// <summary>Speaking speed of the voice (fish.audio prosody.speed).</summary>
+        public float TtsSpeed = API.TtsRequestBody.DefaultSpeed;
+
+        /// <summary>Evens out the loudness between lines (fish.audio prosody.normalize_loudness).</summary>
+        public bool TtsNormalizeLoudness = true;
+
+        /// <summary>Server-side text normalization, which makes fish.audio read numbers properly.</summary>
+        public bool TtsNormalize = true;
+
+        /// <summary>
         /// Main characters of the house, offered as editable voice slots in the TTS tab.
-        /// Every other NPC (the random/secondary ones) falls back to <see cref="TtsVoiceDefault"/>.
+        /// Every other NPC (the random/secondary ones) is a random NPC: she gets a voice of her own
+        /// out of <see cref="API.NpcVoiceAssigner.VoicePool"/> while <see cref="TtsDistinctNpcVoices"/>
+        /// is on, and <see cref="TtsVoiceDefault"/> otherwise. Only the shorter, non-committal form of
+        /// the name is matched here - the check itself lives in
+        /// <see cref="CharacterContextSnapshot.IsMainCharacterName"/>, so voices and the rest of the mod
+        /// agree on who is a main character.
         /// </summary>
         public static readonly string[] MainCharacters = { "Katherine", "Susan", "Stacy", "Laura" };
 
@@ -101,15 +138,34 @@ namespace DialogInterceptorMod.Core
             };
 
         /// <summary>
-        /// Voice reference used for a character, falling back to <see cref="TtsVoiceDefault"/> (the
-        /// random-NPC voice) when the character has no dedicated voice configured.
+        /// Voice reference used for a character:
+        /// a dedicated voice from the ini if there is one, otherwise one of the pool voices for a
+        /// random NPC, and finally <see cref="TtsVoiceDefault"/> (the shared random-NPC voice, and the
+        /// fallback for an unnamed speaker).
         /// </summary>
         public string GetTtsVoice(string characterName)
         {
-            if (!string.IsNullOrEmpty(characterName) &&
-                TtsVoices.TryGetValue(characterName, out string voice) &&
-                !string.IsNullOrWhiteSpace(voice))
-                return voice.Trim();
+            if (!string.IsNullOrWhiteSpace(characterName))
+            {
+                // Exact name first: the main characters and any NPC given a voice in the ini.
+                if (TtsVoices.TryGetValue(characterName, out string voice) && !string.IsNullOrWhiteSpace(voice))
+                    return voice.Trim();
+
+                // A NPC's object name can carry a suffix ("Katherine(Clone)"), and she is still
+                // Katherine: match her entry before she can be mistaken for a random NPC.
+                foreach (string mainCharacter in MainCharacters)
+                {
+                    if (characterName.IndexOf(mainCharacter, StringComparison.OrdinalIgnoreCase) >= 0 &&
+                        TtsVoices.TryGetValue(mainCharacter, out string mainVoice) &&
+                        !string.IsNullOrWhiteSpace(mainVoice))
+                        return mainVoice.Trim();
+                }
+
+                // One voice per random NPC, so the up-to-six NPCs of a scene do not all sound alike.
+                if (TtsDistinctNpcVoices &&
+                    !CharacterContextSnapshot.IsMainCharacterName(characterName))
+                    return NpcVoices.Select(characterName);
+            }
 
             return TtsVoiceDefault;
         }

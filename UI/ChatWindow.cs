@@ -20,6 +20,7 @@ namespace DialogInterceptorMod.UI
         private string _inputText = "";
         private Vector2 _scrollPosition;
         private Vector2 _debugScrollPosition;
+        private Vector2 _ttsScrollPosition;
         private Rect _windowRect;
 
         // Resize handle
@@ -74,7 +75,12 @@ namespace DialogInterceptorMod.UI
         private string _editTtsApiKey;
         private string _editTtsModel;
         private string _editTtsVoiceDefault;
+        private bool _editTtsDistinctNpcVoices = true;
         private float _editTtsVolume = 1f;
+        private string _editTtsLatency = API.TtsRequestBody.DefaultLatency;
+        private float _editTtsSpeed = API.TtsRequestBody.DefaultSpeed;
+        private bool _editTtsNormalizeLoudness = true;
+        private bool _editTtsNormalize = true;
         private readonly Dictionary<string, string> _editTtsVoices = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
         // Hotkey editing
@@ -326,7 +332,7 @@ namespace DialogInterceptorMod.UI
             string charLabel = string.IsNullOrEmpty(_behaviour.CurrentCharName)
                 ? "No NPC nearby"
                 : $"Chatting: {_behaviour.CurrentCharName}";
-            GUILayout.Label($"HLHN AI Chat v0.9 -- {charLabel}", ChatStyles.TitleStyle);
+            GUILayout.Label($"HLHN AI Chat v1.0 -- {charLabel}", ChatStyles.TitleStyle);
             GUILayout.FlexibleSpace();
 
             if (GUILayout.Button("[R]", ChatStyles.ButtonStyle, GUILayout.Width(32)))
@@ -660,7 +666,12 @@ namespace DialogInterceptorMod.UI
             _behaviour.TtsVoiceDefault = string.IsNullOrWhiteSpace(_editTtsVoiceDefault)
                 ? DialogBehaviour.DefaultNpcVoice
                 : _editTtsVoiceDefault.Trim();
+            _behaviour.TtsDistinctNpcVoices = _editTtsDistinctNpcVoices;
             _behaviour.TtsVolume       = Mathf.Clamp01(_editTtsVolume);
+            _behaviour.TtsLatency      = API.TtsRequestBody.NormalizeLatency(_editTtsLatency);
+            _behaviour.TtsSpeed        = API.TtsRequestBody.ClampSpeed(_editTtsSpeed);
+            _behaviour.TtsNormalizeLoudness = _editTtsNormalizeLoudness;
+            _behaviour.TtsNormalize         = _editTtsNormalize;
 
             _behaviour.TtsVoices.Clear();
             foreach (var kv in _editTtsVoices)
@@ -668,6 +679,10 @@ namespace DialogInterceptorMod.UI
                 if (!string.IsNullOrWhiteSpace(kv.Value))
                     _behaviour.TtsVoices[kv.Key] = kv.Value.Trim();
             }
+
+            // Re-applying the settings is a deliberate retry: it clears a paused circuit breaker so
+            // the corrected settings take effect on the next line.
+            API.TtsCircuitBreaker.Resume();
 
             _behaviour.RebuildApiClient();
             SaveConfig();
@@ -692,10 +707,15 @@ namespace DialogInterceptorMod.UI
 
         private void DrawTts()
         {
+            // The tab grew past the window height (voice pool, main character slots, error log), so it
+            // scrolls like the Chat and Debug tabs instead of clipping whatever falls off the bottom.
+            _ttsScrollPosition = GUILayout.BeginScrollView(_ttsScrollPosition, ChatStyles.ChatAreaStyle, GUILayout.ExpandHeight(true));
+
             GUILayout.Label("[TTS] Text-to-Speech (fish.audio)", ChatStyles.SectionStyle);
             GUILayout.Space(4);
 
             DrawCmdToggle("Enable TTS", ref _editTtsEnabled);
+            DrawTtsPauseBanner();
 
             GUILayout.Space(6);
             GUILayout.Label("API URL:", ChatStyles.LabelStyle);
@@ -707,14 +727,52 @@ namespace DialogInterceptorMod.UI
             GUILayout.Label("Model:", ChatStyles.LabelStyle);
             _editTtsModel = GUILayout.TextField(_editTtsModel, ChatStyles.InputStyle);
 
+            // fish.audio answers sooner with a lower latency, and the on-screen reply waits for the
+            // voice, so this is also the knob for how long a line takes to appear.
+            GUILayout.Space(6);
+            GUILayout.Label("Response latency (lower answers sooner, slightly lower quality):", ChatStyles.LabelStyle);
+            GUILayout.BeginHorizontal();
+            foreach (string option in API.TtsRequestBody.Latencies)
+            {
+                bool selected = string.Equals(_editTtsLatency, option, StringComparison.OrdinalIgnoreCase);
+                if (GUILayout.Button(selected ? "[" + option + "]" : option,
+                    selected ? ChatStyles.ActiveButtonStyle : ChatStyles.ButtonStyle,
+                    GUILayout.Width(96)))
+                {
+                    _editTtsLatency = option;
+                }
+            }
+            GUILayout.EndHorizontal();
+
+            GUILayout.Space(4);
+            GUILayout.Label($"Speaking Speed: {_editTtsSpeed:0.00}x", ChatStyles.LabelStyle);
+            _editTtsSpeed = GUILayout.HorizontalSlider(
+                _editTtsSpeed, API.TtsRequestBody.MinSpeed, API.TtsRequestBody.MaxSpeed);
+
+            DrawCmdToggle("Normalize loudness", ref _editTtsNormalizeLoudness);
+            DrawCmdToggle("Normalize numbers", ref _editTtsNormalize);
+
             GUILayout.Space(6);
             GUILayout.Label($"Voice Volume: {Mathf.RoundToInt(_editTtsVolume * 100f)}%", ChatStyles.LabelStyle);
             _editTtsVolume = GUILayout.HorizontalSlider(_editTtsVolume, 0f, 1f);
 
             GUILayout.Space(6);
-            GUILayout.Label("Default NPC Voice (reference_id):", ChatStyles.LabelStyle);
+            GUILayout.Label("Random NPCs (anyone who is not Stacy, Laura, Susan or Katherine):", ChatStyles.SectionStyle);
+            // A scene holds up to six NPCs and the pool holds eight voices, so the NPCs met side by
+            // side do not all end up sounding like the same woman.
+            DrawCmdToggle("One voice per random NPC", ref _editTtsDistinctNpcVoices);
+            GUILayout.Label(_editTtsDistinctNpcVoices
+                ? "Each random NPC takes a voice from the pool below the first time she speaks, and keeps it for the session. Her name is the key, so meeting her again sounds like her."
+                : "Every random NPC speaks with the Default NPC Voice below.",
+                ChatStyles.FooterStyle);
+
+            if (_editTtsDistinctNpcVoices)
+                DrawRandomNpcVoicePool();
+
+            GUILayout.Space(6);
+            GUILayout.Label(_editTtsDistinctNpcVoices ? "Default NPC Voice (reference_id, used while the pool is off):" : "Default NPC Voice (reference_id):", ChatStyles.LabelStyle);
             _editTtsVoiceDefault = GUILayout.TextField(_editTtsVoiceDefault, ChatStyles.InputStyle);
-            GUILayout.Label("Used for every random NPC: any character that is not Stacy, Laura, Susan or Katherine.", ChatStyles.FooterStyle);
+            GUILayout.Label("Used when a speaker has no name, and by every random NPC if the one-voice-per-NPC option above is off.", ChatStyles.FooterStyle);
 
             GUILayout.Space(6);
             GUILayout.Label("Main character voices (reference_id):", ChatStyles.SectionStyle);
@@ -739,6 +797,57 @@ namespace DialogInterceptorMod.UI
 
             GUILayout.Space(10);
             DrawTtsErrorLog();
+
+            GUILayout.EndScrollView();
+        }
+
+        /// <summary>
+        /// Lists the shipped voices the random NPCs draw from, next to the NPC that took each one.
+        /// Reading the pool is how a voice already in use can be told apart from a free one, which
+        /// matters because the pool is what makes two NPCs in the same room sound different.
+        /// </summary>
+        private void DrawRandomNpcVoicePool()
+        {
+            GUILayout.Label($"Random NPC voice pool ({API.NpcVoiceAssigner.VoicePool.Length} voices):", ChatStyles.LabelStyle);
+
+            foreach (string voice in API.NpcVoiceAssigner.VoicePool)
+            {
+                string owner = "";
+                foreach (var kv in _behaviour.NpcVoices.Assignments)
+                {
+                    if (string.Equals(kv.Value, voice, StringComparison.OrdinalIgnoreCase))
+                    {
+                        owner = kv.Key;
+                        break;
+                    }
+                }
+
+                GUILayout.Label($"   {voice}  ->  {(owner.Length == 0 ? "(free)" : owner)}", ChatStyles.DebugLabelStyle);
+            }
+        }
+
+        /// <summary>
+        /// Shown while the circuit breaker holds the requests back. Without it, the only sign that TTS
+        /// stopped talking would be the absence of audio.
+        /// </summary>
+        private void DrawTtsPauseBanner()
+        {
+            if (!API.TtsCircuitBreaker.IsPaused) return;
+
+            GUILayout.Space(4);
+            Color previous = GUI.color;
+            GUI.color = new Color(1f, 0.8f, 0.4f);
+            GUILayout.Label($"TTS PAUSED ({API.TtsCircuitBreaker.ConsecutiveFailures} failures in a row) - {API.TtsCircuitBreaker.Reason}", ChatStyles.LabelStyle);
+            GUI.color = previous;
+            GUILayout.Label("No requests are sent until the cause is fixed or TTS is resumed.", ChatStyles.FooterStyle);
+
+            GUILayout.BeginHorizontal();
+            if (GUILayout.Button("[Retry now]", ChatStyles.ActiveButtonStyle, GUILayout.Width(110)))
+            {
+                API.TtsCircuitBreaker.Resume();
+                SetStatus("[TTS] Resumed. The next reply will use the current settings.", false);
+            }
+            GUILayout.EndHorizontal();
         }
 
         /// <summary>
@@ -802,7 +911,12 @@ namespace DialogInterceptorMod.UI
             _editTtsApiKey       = _behaviour.TtsApiKey;
             _editTtsModel        = _behaviour.TtsModel;
             _editTtsVoiceDefault = _behaviour.TtsVoiceDefault;
+            _editTtsDistinctNpcVoices = _behaviour.TtsDistinctNpcVoices;
             _editTtsVolume       = _behaviour.TtsVolume;
+            _editTtsLatency      = API.TtsRequestBody.NormalizeLatency(_behaviour.TtsLatency);
+            _editTtsSpeed        = API.TtsRequestBody.ClampSpeed(_behaviour.TtsSpeed);
+            _editTtsNormalizeLoudness = _behaviour.TtsNormalizeLoudness;
+            _editTtsNormalize         = _behaviour.TtsNormalize;
 
             _editTtsVoices.Clear();
             foreach (var kv in _behaviour.TtsVoices)
@@ -1080,7 +1194,12 @@ namespace DialogInterceptorMod.UI
                     $"TtsApiKey={_behaviour.TtsApiKey}",
                     $"TtsModel={_behaviour.TtsModel}",
                     $"TtsVoiceDefault={_behaviour.TtsVoiceDefault}",
+                    $"TtsDistinctNpcVoices={_behaviour.TtsDistinctNpcVoices}",
                     $"TtsVolume={_behaviour.TtsVolume.ToString(System.Globalization.CultureInfo.InvariantCulture)}",
+                    $"TtsLatency={_behaviour.TtsLatency}",
+                    $"TtsSpeed={_behaviour.TtsSpeed.ToString(System.Globalization.CultureInfo.InvariantCulture)}",
+                    $"TtsNormalizeLoudness={_behaviour.TtsNormalizeLoudness}",
+                    $"TtsNormalize={_behaviour.TtsNormalize}",
                 };
 
                 // One line per configured character voice: Voice_<Character>=<reference_id>
@@ -1211,9 +1330,28 @@ namespace DialogInterceptorMod.UI
                             if (!string.IsNullOrWhiteSpace(val))
                                 _behaviour.TtsVoiceDefault = val;
                             break;
+                        case "TtsDistinctNpcVoices":
+                            // Absent from older inis: keep the shipped default (on).
+                            if (bool.TryParse(val, out bool distinctVoices))
+                                _behaviour.TtsDistinctNpcVoices = distinctVoices;
+                            break;
                         case "TtsVolume":
                             if (float.TryParse(val, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float ttsVol))
                                 _behaviour.TtsVolume = Mathf.Clamp01(ttsVol);
+                            break;
+                        case "TtsLatency":
+                            // Unknown values fall back to the endpoint default instead of being posted.
+                            _behaviour.TtsLatency = API.TtsRequestBody.NormalizeLatency(val);
+                            break;
+                        case "TtsSpeed":
+                            if (float.TryParse(val, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float ttsSpeed))
+                                _behaviour.TtsSpeed = API.TtsRequestBody.ClampSpeed(ttsSpeed);
+                            break;
+                        case "TtsNormalizeLoudness":
+                            if (bool.TryParse(val, out bool ttsLoudness)) _behaviour.TtsNormalizeLoudness = ttsLoudness;
+                            break;
+                        case "TtsNormalize":
+                            if (bool.TryParse(val, out bool ttsNormalize)) _behaviour.TtsNormalize = ttsNormalize;
                             break;
                     }
                 }
