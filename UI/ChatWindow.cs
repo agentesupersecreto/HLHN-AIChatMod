@@ -334,7 +334,7 @@ namespace DialogInterceptorMod.UI
             string charLabel = string.IsNullOrEmpty(_behaviour.CurrentCharName)
                 ? "No NPC nearby"
                 : $"Chatting: {_behaviour.CurrentCharName}";
-            GUILayout.Label($"HLHN AI Chat v1.0 -- {charLabel}", ChatStyles.TitleStyle);
+            GUILayout.Label($"HLHN AI Chat v1.1 -- {charLabel}", ChatStyles.TitleStyle);
             GUILayout.FlexibleSpace();
 
             if (GUILayout.Button("[R]", ChatStyles.ButtonStyle, GUILayout.Width(32)))

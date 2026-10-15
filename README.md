@@ -20,6 +20,12 @@ A BepInEx mod for **He Lives Here Now** by EvilGuest, that integrates AI-powered
   - Kiss, facial expressions, and emotion adjustments
 - 🌐 **Multilingual Support** — Player messages are understood in English, Spanish, and any language supported by the AI model.
 - 💾 **Persistent Memory & Milestones** — Conversation histories, relationship milestones (intimacy, virginity, orgasms), and character summaries are automatically saved to disk.
+- 🎤 **Text-to-Speech** — NPC replies are spoken out loud using **fish.audio** text-to-speech:
+  - a main female character her own slot,
+  - every other character her random-NPC voice,
+  - the jail **Police** hers,
+  - and all the other game dialogues (Talk About, Compliment, Critic, gifts, kisses, scripted events, even **Sex-Talk** lines) also get spoken.  
+  
 
 ---
 
@@ -130,19 +136,11 @@ Voices are handed out least-used-first, and a scene holds at most six NPCs, so t
 
 ### Default Game Dialogues (`TtsGameDialogues`)
 
-By default the mod only voices what the AI writes. Turn **`Default Game Dialogues`** on in `[CONFIG] → [TTS]` and it also voices the lines the **game itself** writes, using the same voices as the AI replies (a main character her own slot, every other character her random-NPC voice, the jail **Police** hers):
+By default the mod only voices what the AI writes. Turn **`Default Game Dialogues`** on in `[CONFIG] → [TTS]` and it also voices the lines the **game itself** writes, using the same voices as the AI replies (a main female character her own slot, every other character her random-NPC voice, the jail **Police** hers):
 
 * the speech bubbles - Talk About / Compliment / Critic replies, gifts, kisses, the random NPC chatter;
 * the dialogue box - scripted events, quest lines, the Police, clothing and item interactions;
-* the **Sex-Talk** windows (`SexDialogue`, `CumDialogue`, `ThreesomeSexDialogue`) - the comments a character makes while she is in sex mode.
-
-Every **Sex-Talk line is sent with the `[moaning]` tag in front**, so the voice performs it as a moan instead of reading it flat. fish.audio reads everything after a bracket tag in that style, and the tag sits at the very start of the line for exactly that reason (the game's own bracketed hints – `[sexTalk]` – are removed first, so the two never collide). It applies to every one of those lines, on every character, whenever they are voiced.
-
-`[moaning]` is a *free-form* tag: the documented core set is `[whisper]`, `[laugh]`, `[sigh]`, `[gasp]` and `[pause]`, and the model accepts any description in brackets but renders free-form ones less consistently. If the tag ever comes out flat or gets read out loud, it is a single constant to change (`GameDialogueText.SexTalkTag`), and switching `TtsNormalize` off in the TTS tab is the other knob worth trying. The tag is part of what the cache stores, so a moaned line and the same words spoken normally stay separate entries.
-
-It is **off by default** because the game speaks constantly and every one of those lines is a separate paid request to fish.audio: a party, a room full of NPCs or a single sex scene spends far more than an AI conversation does.
-
-Three rules keep it from misbehaving. A line is only voiced if the game actually **showed** it (the bubble was free, the box was not still busy, Sex-Talk is enabled in the game's own UI). The speaker decides the voice, so the player, `whispers`, `Me`, the narrator and the game's speaker-less narration (`Laura is here`, `Your lust has run out`) stay silent, and a `...` or `***` line is not worth a request. Finally, the same sentence shown again within a moment is voiced once, not twice. AI replies are never sent to the endpoint a second time and never echoed into the chat context.
+* the **Sex-Talk** - the comments a character makes while she is in sex mode.
 
 ### Game dialogue cache (`TtsNativeCache`)
 
